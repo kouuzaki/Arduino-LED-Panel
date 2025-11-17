@@ -5,9 +5,8 @@
 #include <NetworkManager.h>
 #include <MqttManager.h>
 #include <DeviceConfig.h>
-#include "interface/secure-json-response.h"
-#include "interface/device-system-info.h"
 #include <time.h>
+#include "interface/system-info-builder.h"
 
 // External references
 extern MqttManager *mqttManager;
@@ -28,9 +27,9 @@ ApiRouting &ApiRouting::getInstance()
 // Private constructor
 ApiRouting::ApiRouting() : serverStarted(false)
 {
-    // Initialize EthernetServer on port 80
-    server = new EthernetServer(80);
-    Serial.println("🔧 ApiRouting instance created (EthernetServer)");
+    // Initialize EthernetServer on port 8080
+    server = new EthernetServer(8080);
+    Serial.println("🔧 ApiRouting instance created (EthernetServer on port 8080)");
 }
 
 // Destructor
@@ -49,8 +48,9 @@ void ApiRouting::start()
 {
     if (server && !serverStarted)
     {
+        server->begin();  // CRITICAL: Start listening on port 8080
         serverStarted = true;
-        Serial.println("🚀 API Server started on port 80");
+        Serial.println("🚀 API Server started on port 8080");
     }
 }
 
@@ -86,22 +86,29 @@ void ApiRouting::handleHttpRequest(EthernetClient &client)
     String path = "";
     String body = "";
 
-    // Read HTTP request
-    while (client.connected())
+    // Read HTTP request with strict timeout
+    unsigned long startTime = millis();
+    const unsigned long REQUEST_TIMEOUT = 200;  // 200ms timeout
+    bool headerComplete = false;
+    
+    while ((millis() - startTime) < REQUEST_TIMEOUT)
     {
         if (client.available())
         {
             char c = client.read();
             httpRequest += c;
+            startTime = millis();  // Reset timeout on each character received
 
             // Check if we've received end of HTTP request (blank line)
             if (httpRequest.endsWith("\n\n") || httpRequest.endsWith("\r\n\r\n"))
             {
+                headerComplete = true;
                 break;
             }
         }
     }
 
+    // If we didn't get complete header, still try to parse what we have
     if (httpRequest.length() == 0)
     {
         client.stop();
@@ -120,6 +127,7 @@ void ApiRouting::handleHttpRequest(EthernetClient &client)
         {
             method = firstLine.substring(0, firstSpace);
             path = firstLine.substring(firstSpace + 1, secondSpace);
+            path.trim();  // Remove whitespace
         }
     }
 
@@ -134,207 +142,260 @@ void ApiRouting::handleHttpRequest(EthernetClient &client)
         body = httpRequest.substring(bodyStart);
     }
 
-    // Route requests
-    JsonDocument responseDoc;
-    bool notFound = false;
+    Serial.println("📝 Request: " + method + " " + path);
+    
+    // Print free RAM
+    extern int __heap_start, *__brkval;
+    int v;
+    int freeRam = (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
+    Serial.print("📊 Free RAM: ");
+    Serial.print(freeRam);
+    Serial.println(" bytes");
 
+    // Route and send response directly to client (memory efficient!)
     if (path == "/" || path == "/index.html")
     {
-        // Root endpoint
-        JsonArray data = responseDoc.createNestedArray("data");
-        JsonObject rootInfo = data.createNestedObject();
-
-        DeviceConfig &deviceConfig = DeviceConfig::getInstance();
-        String localIP = NetworkManager::getInstance().getLocalIP();
-
-        rootInfo["welcome"] = "Arduino UNO IoT Device API";
-        rootInfo["status"] = "running";
-        rootInfo["version"] = "1.0.0";
-        rootInfo["device_id"] = deviceConfig.getDeviceID();
-        rootInfo["device_ip"] = localIP;
-        rootInfo["api_port"] = 80;
-
-        // Available endpoints
-        JsonArray endpoints = rootInfo.createNestedArray("endpoints");
-
-        JsonObject ep0 = endpoints.createNestedObject();
-        ep0["method"] = "GET";
-        ep0["path"] = "/";
-        ep0["description"] = "Root endpoint - Welcome message";
-
-        JsonObject ep1 = endpoints.createNestedObject();
-        ep1["method"] = "GET";
-        ep1["path"] = "/api/device/info";
-        ep1["description"] = "Get device information";
-
-        JsonObject ep2 = endpoints.createNestedObject();
-        ep2["method"] = "GET";
-        ep2["path"] = "/api/system";
-        ep2["description"] = "Get system status";
-
-        JsonObject ep3 = endpoints.createNestedObject();
-        ep3["method"] = "GET";
-        ep3["path"] = "/api/config";
-        ep3["description"] = "Get configuration";
-
-        JsonObject ep4 = endpoints.createNestedObject();
-        ep4["method"] = "POST";
-        ep4["path"] = "/api/config";
-        ep4["description"] = "Update configuration";
+        sendRootResponse(client);
     }
     else if (path == "/api/device/info")
     {
-        // Device info endpoint
-        JsonArray data = responseDoc.createNestedArray("data");
-        JsonDocument deviceInfoDoc = buildDeviceSystemInfoJson();
-        data.add(deviceInfoDoc.as<JsonObject>());
+        sendDeviceInfoResponse(client);
     }
     else if (path == "/api/system")
     {
-        // System status endpoint
-        JsonArray data = responseDoc.createNestedArray("data");
-        JsonDocument deviceInfoDoc = buildDeviceSystemInfoJson();
-        data.add(deviceInfoDoc.as<JsonObject>());
+        sendSystemInfoResponse(client);
     }
     else if (path == "/api/config" && method == "GET")
     {
-        // Get configuration
-        DeviceConfig &deviceConfig = DeviceConfig::getInstance();
-
-        JsonArray data = responseDoc.createNestedArray("data");
-        JsonObject config = data.createNestedObject();
-
-        config["device_id"] = deviceConfig.getDeviceID();
-        config["device_ip"] = deviceConfig.getDeviceIP();
-        config["subnet_mask"] = deviceConfig.getSubnetMask();
-        config["gateway"] = deviceConfig.getGateway();
-        config["dns_primary"] = deviceConfig.getDnsPrimary();
-        config["dns_secondary"] = deviceConfig.getDnsSecondary();
-        config["mqtt_server"] = deviceConfig.getMqttServer();
-        config["mqtt_port"] = deviceConfig.getMqttPort();
-        config["mqtt_username"] = deviceConfig.getMqttUsername();
+        sendConfigResponse(client);
     }
     else if (path == "/api/config" && method == "POST")
     {
-        // Update configuration
-        JsonDocument bodyDoc;
-        DeserializationError error = deserializeJson(bodyDoc, body);
-
-        if (error)
-        {
-            responseDoc["status"] = "error";
-            responseDoc["message"] = "Invalid JSON format";
-        }
-        else
-        {
-            DeviceConfig &deviceConfig = DeviceConfig::getInstance();
-            bool updated = false;
-
-            // Update device_id if provided
-            if (bodyDoc.containsKey("device_id") && bodyDoc["device_id"].is<const char *>())
-            {
-                deviceConfig.setDeviceID(bodyDoc["device_id"].as<String>());
-                updated = true;
-                Serial.println("✏️ Device ID updated");
-            }
-
-            // Update device_ip if provided
-            if (bodyDoc.containsKey("device_ip") && bodyDoc["device_ip"].is<const char *>())
-            {
-                deviceConfig.setDeviceIP(bodyDoc["device_ip"].as<String>());
-                updated = true;
-                Serial.println("✏️ Device IP updated");
-            }
-
-            // Update MQTT server if provided
-            if (bodyDoc.containsKey("mqtt_server") && bodyDoc["mqtt_server"].is<const char *>())
-            {
-                deviceConfig.setMqttServer(bodyDoc["mqtt_server"].as<String>());
-                updated = true;
-                Serial.println("✏️ MQTT Server updated");
-            }
-
-            // Update MQTT port if provided
-            if (bodyDoc.containsKey("mqtt_port") && bodyDoc["mqtt_port"].is<int>())
-            {
-                deviceConfig.setMqttPort(bodyDoc["mqtt_port"].as<int>());
-                updated = true;
-                Serial.println("✏️ MQTT Port updated");
-            }
-
-            // Update MQTT username if provided
-            if (bodyDoc.containsKey("mqtt_username") && bodyDoc["mqtt_username"].is<const char *>())
-            {
-                deviceConfig.setMqttUsername(bodyDoc["mqtt_username"].as<String>());
-                updated = true;
-                Serial.println("✏️ MQTT Username updated");
-            }
-
-            // Update MQTT password if provided
-            if (bodyDoc.containsKey("mqtt_password") && bodyDoc["mqtt_password"].is<const char *>())
-            {
-                deviceConfig.setMqttPassword(bodyDoc["mqtt_password"].as<String>());
-                updated = true;
-                Serial.println("✏️ MQTT Password updated");
-            }
-
-            if (updated)
-            {
-                if (deviceConfig.saveConfig())
-                {
-                    responseDoc["status"] = "success";
-                    responseDoc["message"] = "Configuration updated - Device restarting to apply changes";
-                    Serial.println("💾 Configuration saved to EEPROM");
-                    Serial.println("⏰ Scheduling device restart in 2 seconds...");
-                }
-                else
-                {
-                    responseDoc["status"] = "error";
-                    responseDoc["message"] = "Failed to save configuration";
-                }
-            }
-            else
-            {
-                responseDoc["status"] = "warning";
-                responseDoc["message"] = "No configuration fields provided";
-            }
-        }
+        sendConfigUpdateResponse(client, body);
     }
     else
     {
-        // 404 Not Found
-        notFound = true;
-        responseDoc["status"] = "error";
-        responseDoc["message"] = "Endpoint not found";
+        sendNotFoundResponse(client);
     }
+    
+    client.stop();
+    Serial.println("📱 Client disconnected");
+}
 
-    // Serialize JSON response
-    String jsonResponse;
-    serializeJson(responseDoc, jsonResponse);
+// ============================================================================
+// MEMORY-EFFICIENT RESPONSE HANDLERS - Serialize directly to client!
+// ============================================================================
 
-    // Send HTTP response header
-    if (notFound)
-    {
-        client.println("HTTP/1.1 404 Not Found");
-    }
-    else
-    {
-        client.println("HTTP/1.1 200 OK");
-    }
-
+void ApiRouting::sendDeviceInfoResponse(EthernetClient &client)
+{
+    Serial.println("🔍 Building device info...");
+    
+    JsonDocument doc;
+    
+    // Use shared helper function for consistency
+    buildDeviceSystemInfo(doc);
+    
+    // Send HTTP headers
+    client.println("HTTP/1.1 200 OK");
     client.println("Content-Type: application/json");
     client.println("Connection: close");
     client.println();
+    
+    // Serialize JSON directly to client (NO intermediate String!)
+    serializeJson(doc, client);
+    
+    Serial.println("✅ Device info sent");
+}
 
-    // Send response body
-    client.println(jsonResponse);
+void ApiRouting::sendRootResponse(EthernetClient &client)
+{
+    JsonDocument doc;
+    
+    DeviceConfig &deviceConfig = DeviceConfig::getInstance();
+    String localIP = NetworkManager::getInstance().getLocalIP();
+    
+    doc["welcome"] = "Arduino Mega IoT Device API";
+    doc["status"] = "running";
+    doc["version"] = "1.0.0";
+    doc["device_id"] = deviceConfig.getDeviceID();
+    doc["device_ip"] = localIP;
+    doc["api_port"] = 8080;
+    
+    // Add endpoints array
+    JsonArray endpoints = doc["endpoints"].to<JsonArray>();
+    
+    JsonObject ep0 = endpoints.add<JsonObject>();
+    ep0["method"] = "GET";
+    ep0["path"] = "/";
+    ep0["description"] = "Root endpoint - Welcome message";
+    
+    JsonObject ep1 = endpoints.add<JsonObject>();
+    ep1["method"] = "GET";
+    ep1["path"] = "/api/device/info";
+    ep1["description"] = "Get device information";
+    
+    JsonObject ep2 = endpoints.add<JsonObject>();
+    ep2["method"] = "GET";
+    ep2["path"] = "/api/system";
+    ep2["description"] = "Get system status";
+    
+    JsonObject ep3 = endpoints.add<JsonObject>();
+    ep3["method"] = "GET";
+    ep3["path"] = "/api/config";
+    ep3["description"] = "Get configuration";
+    
+    JsonObject ep4 = endpoints.add<JsonObject>();
+    ep4["method"] = "POST";
+    ep4["path"] = "/api/config";
+    ep4["description"] = "Update configuration";
+    
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+    serializeJson(doc, client);
+}
 
-    // Give browser time to receive data
-    delay(1);
+void ApiRouting::sendSystemInfoResponse(EthernetClient &client)
+{
+    JsonDocument doc;
+    
+    // Use shared helper function
+    buildDeviceSystemInfo(doc);
+    
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+    serializeJson(doc, client);
+}
 
-    // Close connection
-    client.stop();
-    Serial.println("📱 Client disconnected");
+void ApiRouting::sendConfigResponse(EthernetClient &client)
+{
+    JsonDocument doc;
+    DeviceConfig &deviceConfig = DeviceConfig::getInstance();
+    
+    doc["device_id"] = deviceConfig.getDeviceID();
+    doc["device_ip"] = deviceConfig.getDeviceIP();
+    doc["subnet_mask"] = deviceConfig.getSubnetMask();
+    doc["gateway"] = deviceConfig.getGateway();
+    doc["dns_primary"] = deviceConfig.getDnsPrimary();
+    doc["dns_secondary"] = deviceConfig.getDnsSecondary();
+    doc["mqtt_server"] = deviceConfig.getMqttServer();
+    doc["mqtt_port"] = deviceConfig.getMqttPort();
+    doc["mqtt_username"] = deviceConfig.getMqttUsername();
+    
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+    serializeJson(doc, client);
+}
+
+void ApiRouting::sendConfigUpdateResponse(EthernetClient &client, const String &body)
+{
+    JsonDocument bodyDoc;
+    DeserializationError error = deserializeJson(bodyDoc, body);
+    
+    JsonDocument responseDoc;
+    
+    if (error)
+    {
+        responseDoc["status"] = "error";
+        responseDoc["message"] = "Invalid JSON format";
+    }
+    else
+    {
+        DeviceConfig &deviceConfig = DeviceConfig::getInstance();
+        bool updated = false;
+        
+        // Update device_id if provided
+        if (bodyDoc["device_id"].is<const char *>())
+        {
+            deviceConfig.setDeviceID(bodyDoc["device_id"].as<String>());
+            updated = true;
+            Serial.println("✏️ Device ID updated");
+        }
+        
+        // Update device_ip if provided
+        if (bodyDoc["device_ip"].is<const char *>())
+        {
+            deviceConfig.setDeviceIP(bodyDoc["device_ip"].as<String>());
+            updated = true;
+            Serial.println("✏️ Device IP updated");
+        }
+        
+        // Update MQTT server if provided
+        if (bodyDoc["mqtt_server"].is<const char *>())
+        {
+            deviceConfig.setMqttServer(bodyDoc["mqtt_server"].as<String>());
+            updated = true;
+            Serial.println("✏️ MQTT Server updated");
+        }
+        
+        // Update MQTT port if provided
+        if (bodyDoc["mqtt_port"].is<int>())
+        {
+            deviceConfig.setMqttPort(bodyDoc["mqtt_port"].as<int>());
+            updated = true;
+            Serial.println("✏️ MQTT Port updated");
+        }
+        
+        // Update MQTT username if provided
+        if (bodyDoc["mqtt_username"].is<const char *>())
+        {
+            deviceConfig.setMqttUsername(bodyDoc["mqtt_username"].as<String>());
+            updated = true;
+            Serial.println("✏️ MQTT Username updated");
+        }
+        
+        // Update MQTT password if provided
+        if (bodyDoc["mqtt_password"].is<const char *>())
+        {
+            deviceConfig.setMqttPassword(bodyDoc["mqtt_password"].as<String>());
+            updated = true;
+            Serial.println("✏️ MQTT Password updated");
+        }
+        
+        if (updated)
+        {
+            if (deviceConfig.saveConfig())
+            {
+                responseDoc["status"] = "success";
+                responseDoc["message"] = "Configuration updated successfully";
+                Serial.println("💾 Configuration saved to EEPROM");
+            }
+            else
+            {
+                responseDoc["status"] = "error";
+                responseDoc["message"] = "Failed to save configuration";
+            }
+        }
+        else
+        {
+            responseDoc["status"] = "warning";
+            responseDoc["message"] = "No configuration fields provided";
+        }
+    }
+    
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+    serializeJson(responseDoc, client);
+}
+
+void ApiRouting::sendNotFoundResponse(EthernetClient &client)
+{
+    JsonDocument doc;
+    doc["error"] = "not_found";
+    doc["message"] = "Endpoint not found";
+    
+    client.println("HTTP/1.1 404 Not Found");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+    serializeJson(doc, client);
 }
 
 // Setup routes - placeholder untuk compatibility

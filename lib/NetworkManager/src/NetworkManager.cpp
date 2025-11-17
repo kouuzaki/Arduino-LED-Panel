@@ -92,28 +92,34 @@ bool NetworkManager::initEthernet()
     // Configure static IP
     Serial.println("🔧 Configuring Ethernet with static IP...");
 
-    // Ethernet.begin with static IP: begin(mac, ip, gateway, subnet, dns)
+    // Ethernet.begin dengan parameter yang benar:
+    // Urutan: begin(mac, local_ip, dns_server, gateway, subnet)
     byte mac[6] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED};
+    
+    Serial.print("📍 IP Address: ");
+    Serial.println(ipToString(staticIP));
+    Serial.print("📍 Gateway: ");
+    Serial.println(ipToString(gateway));
+    Serial.print("📍 Subnet Mask: ");
+    Serial.println(ipToString(subnet));
+    Serial.print("📍 DNS: ");
+    Serial.println(ipToString(dnsPrimary));
+    
     Ethernet.begin(mac, staticIP, dnsPrimary, gateway, subnet);
 
-    // Wait for Ethernet to be ready
-    Serial.print("⏳ Waiting for Ethernet link...");
-    unsigned long start = millis();
-    while ((Ethernet.linkStatus() != LinkON) && (millis() - start) < 10000)
-    {
-        delay(500);
-        Serial.print(".");
-    }
-    Serial.println();
+    // Untuk Mega 2560: Tunggu sebentar agar Ethernet library initialize
+    Serial.print("⏳ Initializing Ethernet...");
+    delay(2000);  // Tunggu 2 detik untuk Ethernet stabilize
+    Serial.println("✅");
 
-    // Check if link is up
-    if (Ethernet.linkStatus() == LinkON)
+    // Check if IP sudah ter-assign
+    if (Ethernet.localIP() != IPAddress(0, 0, 0, 0))
     {
-        Serial.println("✅ Ethernet link is up");
+        Serial.println("✅ Ethernet link is configured");
         Serial.print("📍 Ethernet MAC: ");
-        byte mac[6];
-        Ethernet.MACAddress(mac);
-        printMacAddress(mac);
+        byte readMac[6];
+        Ethernet.MACAddress(readMac);
+        printMacAddress(readMac);
         Serial.print("📍 IP Address: ");
         Serial.println(ipToString(Ethernet.localIP()));
         Serial.print("📍 Gateway: ");
@@ -127,9 +133,19 @@ bool NetworkManager::initEthernet()
     }
     else
     {
-        Serial.println("❌ Ethernet link is down - checking if cable connected...");
-        Serial.println("⚠️ Proceeding anyway with configured static IP");
-        return true; // Allow to continue even without link
+        Serial.println("⚠️ Ethernet address not assigned - retrying...");
+        // Retry once
+        delay(1000);
+        if (Ethernet.localIP() != IPAddress(0, 0, 0, 0))
+        {
+            Serial.println("✅ Ethernet configured successfully on retry");
+            return true;
+        }
+        else
+        {
+            Serial.println("❌ Failed to configure Ethernet");
+            return false;
+        }
     }
 }
 
@@ -141,7 +157,12 @@ void NetworkManager::checkConnection()
 
 bool NetworkManager::checkEthernetConnection()
 {
-    if (Ethernet.linkStatus() == LinkON && Ethernet.localIP() != IPAddress(0, 0, 0, 0))
+    // Mega 2560 + W5100: Kita tidak perlu mengandalkan linkStatus()
+    // Cukup check apakah IP sudah ter-assign dan gateway terreach
+    IPAddress currentIP = Ethernet.localIP();
+    
+    // Jika IP bukan 0.0.0.0, berarti Ethernet sudah configured
+    if (currentIP != IPAddress(0, 0, 0, 0))
     {
         if (currentType != NETWORK_ETHERNET)
         {

@@ -1,104 +1,205 @@
+#include <Arduino.h>
 #include <SPI.h>
 #include <Ethernet.h>
+#include <api/ApiRouting.h>
+#include <mqtt/MqttRouting.h>
+#include <NetworkManager.h>
+#include <MqttManager.h>
+#include <DeviceConfig.h>
 
-// ===============
-// KONFIGURASI
-// ===============
+// --- Global Managers & Instances ---
+DeviceConfig &deviceConfig = DeviceConfig::getInstance();
+MqttManager *mqttManager = nullptr;
+bool apiServerStarted = false;
 
-// Gunakan MAC address random (bisa apa saja, tapi unik)
-byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
+// Timing variables
+unsigned long lastNetCheck = 0;
+unsigned long lastMqttTry = 0;
+unsigned long lastHeartbeat = 0;
 
-// Pilihan 1: DHCP (otomatis)
-// EthernetClient client;
+void printConfiguration()
+{
+    Serial.println("\n========================================");
+    Serial.println("  Arduino Mega Configuration Status");
+    Serial.println("========================================");
+    Serial.println("Device ID    : " + deviceConfig.getDeviceID());
+    Serial.println("Device IP    : " + deviceConfig.getDeviceIP());
+    Serial.println("MQTT Server  : " + (deviceConfig.getMqttServer().length() > 0 ? deviceConfig.getMqttServer() : "(not configured)"));
+    Serial.println("MQTT Port    : " + String(deviceConfig.getMqttPort()));
+    Serial.println("========================================\n");
 
-// Pilihan 2: STATIC IP
-IPAddress ip(192, 168, 1, 200);   // sesuaikan jaringan LAN kamu
-IPAddress dns(192, 168, 1, 1);
-IPAddress gateway(192, 168, 1, 1);
-IPAddress subnet(255, 255, 255, 0);
-
-// Web server port 80
-EthernetServer server(80);
-
-void setup() {
-  pinMode(13, OUTPUT);  // LED terpasang pada pin 13
-  digitalWrite(13, LOW);
-
-  Serial.begin(9600);
-  while (!Serial) {}
-
-  Serial.println("Initializing Ethernet...");
-
-  // ---- DHCP ----
-  // if (Ethernet.begin(mac) == 0) {
-  //   Serial.println("DHCP Failed, switching to STATIC IP");
-  //   Ethernet.begin(mac, ip, dns, gateway, subnet);
-  // }
-
-  // ---- STATIC IP ----
-  Ethernet.begin(mac, ip, dns, gateway, subnet);
-
-  delay(1000);
-
-  Serial.print("IP Address: ");
-  Serial.println(Ethernet.localIP());
-
-  server.begin();
-  Serial.println("Web server started");
+    if (deviceConfig.getMqttServer().length() == 0)
+    {
+        Serial.println("⚠️  MQTT not configured!");
+        Serial.println("💡 Use API: POST /api/config to configure\n");
+    }
 }
 
-void loop() {
-  EthernetClient client = server.available();
+bool startNetwork()
+{
+    NetworkManager &networkManager = NetworkManager::getInstance();
+    Serial.println("🌐 Starting network (Ethernet W5100)...");
 
-  if (client) {
-    Serial.println("New Client Connected");
-    boolean currentLineIsBlank = true;
-    String request = "";
+    if (networkManager.init() && networkManager.isConnected())
+    {
+        Serial.println("✅ Ethernet connected: " + networkManager.getLocalIP());
+        return true;
+    }
+    else
+    {
+        Serial.println("❌ Ethernet connection failed");
+        return false;
+    }
+}
 
-    while (client.connected()) {
-      if (client.available()) {
-        char c = client.read();
-        request += c;
+void setup()
+{
+    Serial.begin(115200);
+    delay(1000);
 
-        // Cek end of header (baris kosong)
-        if (c == '\n' && currentLineIsBlank) {
-          
-          // ======================
-          // PROSES REQUEST
-          // ======================
-          if (request.indexOf("GET /on") >= 0) {
-            digitalWrite(13, HIGH);
-            Serial.println("LED ON");
-          }
+    Serial.println("\n\n");
+    Serial.println("========================================");
+    Serial.println("  Arduino Mega IoT - Ethernet + MQTT");
+    Serial.println("========================================");
 
-          if (request.indexOf("GET /off") >= 0) {
-            digitalWrite(13, LOW);
-            Serial.println("LED OFF");
-          }
+    Serial.println("\n🔧 Initializing Device Configuration...");
+    
+    // SELALU set defaults dulu SEBELUM init, supaya nilai ini digunakan
+    deviceConfig.setCustomDefaults("arduino_mega_eth",
+                                   "192.168.1.60",
+                                   "255.255.255.0",
+                                   "192.168.1.1",
+                                   "8.8.8.8",
+                                   "1.1.1.1",
+                                   1884,
+                                   "192.168.1.1",
+                                   "edgeadmin",
+                                   "edge123");
+    
+    // Init dengan forceDefaults=true agar selalu simpan defaults ke EEPROM
+    bool configExists = deviceConfig.init(true);
+    
+    Serial.println("✅ Device Configuration initialized and saved to EEPROM");
+    Serial.println("📝 IP: 192.168.1.60, MQTT Server: 192.168.1.1:1883");
 
-          // ======================
-          // RESPON WEB
-          // ======================
-          client.println("HTTP/1.1 200 OK");
-          client.println("Content-Type: text/html");
-          client.println("Connection: close");
-          client.println();
-          client.println("<html><body>");
-          client.println("<h2>Arduino W5100 LED Control</h2>");
-          client.println("<a href='/on'><button>LED ON</button></a><br/><br/>");
-          client.println("<a href='/off'><button>LED OFF</button></a>");
-          client.println("</body></html>");
+    printConfiguration();
 
-          break;
-        }
-
-        if (c == '\n') currentLineIsBlank = true;
-        else if (c != '\r') currentLineIsBlank = false;
-      }
+    Serial.println("🌐 Starting network...");
+    bool netOk = startNetwork();
+    if (!netOk)
+    {
+        Serial.println("⚠️  Network not available. Will keep trying in loop.");
     }
 
-    delay(1);
-    client.stop();
-    Serial.println("Client disconnected");
-  }
+    Serial.println("📡 Initializing MQTT...");
+    mqttManager = new MqttManager();
+    mqttManager->init();
+
+    String mqtt_server = deviceConfig.getMqttServer();
+    if (mqtt_server.length() > 0)
+    {
+        mqttManager->setConfig(
+            deviceConfig.getMqttUsername(),
+            deviceConfig.getMqttPassword(),
+            mqtt_server,
+            deviceConfig.getMqttPort());
+        Serial.println("✅ MQTT configured: " + mqtt_server + ":" + String(deviceConfig.getMqttPort()));
+    }
+    else
+    {
+        Serial.println("⚠️  MQTT not configured");
+    }
+
+    Serial.println("🌐 Setting up API routes...");
+    ApiRouting &apiRouting = ApiRouting::getInstance();
+    apiRouting.setupRoutes();
+    Serial.println("✅ API routes configured");
+
+    Serial.println("📋 Initializing MQTT Routing...");
+    MqttRouting &mqttRouting = MqttRouting::getInstance();
+    mqttRouting.init();
+    Serial.println("✅ MQTT Routing initialized successfully");
+
+    if (NetworkManager::getInstance().isConnected())
+    {
+        apiRouting.start();
+        apiServerStarted = true;
+        Serial.println("✅ API started at: http://" + NetworkManager::getInstance().getLocalIP());
+
+        if (mqtt_server.length() > 0)
+        {
+            Serial.println("🔌 Connecting to MQTT broker...");
+            if (mqttManager->connect())
+            {
+                Serial.println("✅ MQTT connected");
+                Serial.println("📋 Subscribing to MQTT topics...");
+                if (mqttRouting.subscribeAllRoutes())
+                {
+                    Serial.println("✅ MQTT subscriptions successful");
+                }
+            }
+            else
+            {
+                Serial.println("⚠️  MQTT connect failed, will retry in loop");
+            }
+        }
+    }
+
+    Serial.println("\n========================================");
+    Serial.println("  Setup Complete - System Ready");
+    Serial.println("========================================\n");
 }
+
+void loop()
+{
+    if (apiServerStarted && NetworkManager::getInstance().isConnected())
+    {
+        ApiRouting::getInstance().handleClient();
+    }
+
+    if (millis() - lastNetCheck > 5000)
+    {
+        lastNetCheck = millis();
+        if (!NetworkManager::getInstance().isConnected())
+        {
+            Serial.println("⚠️  Network down, attempting reconnect...");
+            startNetwork();
+        }
+    }
+
+    if (mqttManager)
+    {
+        mqttManager->loop();
+
+        if (!mqttManager->isConnected() && deviceConfig.getMqttServer().length() > 0)
+        {
+            if (millis() - lastMqttTry > 10000)
+            {
+                lastMqttTry = millis();
+                Serial.println("🔄 Retrying MQTT connection...");
+                if (mqttManager->connect())
+                {
+                    MqttRouting::getInstance().subscribeAllRoutes();
+                }
+            }
+        }
+    }
+
+    if (NetworkManager::getInstance().isConnected() && !apiServerStarted)
+    {
+        ApiRouting::getInstance().start();
+        apiServerStarted = true;
+        Serial.println("✅ API server started at: http://" + NetworkManager::getInstance().getLocalIP());
+    }
+
+    if (millis() - lastHeartbeat > 30000)
+    {
+        lastHeartbeat = millis();
+        Serial.println("💓 Heartbeat - Device ID: " + deviceConfig.getDeviceID() +
+                       " | Network: " + (NetworkManager::getInstance().isConnected() ? "✅" : "❌") +
+                       " | MQTT: " + (mqttManager && mqttManager->isConnected() ? "✅" : "❌"));
+    }
+
+    delay(10);
+}
+

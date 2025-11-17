@@ -47,6 +47,15 @@ public:
 
     // Helper function untuk parse HTTP request
     void handleHttpRequest(EthernetClient &client);
+
+private:
+    // Memory-efficient response handlers - serialize directly to client
+    void sendDeviceInfoResponse(EthernetClient &client);
+    void sendRootResponse(EthernetClient &client);
+    void sendSystemInfoResponse(EthernetClient &client);
+    void sendConfigResponse(EthernetClient &client);
+    void sendConfigUpdateResponse(EthernetClient &client, const String &body);
+    void sendNotFoundResponse(EthernetClient &client);
 };
 
 #endif

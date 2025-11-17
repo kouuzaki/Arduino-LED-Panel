@@ -2,8 +2,8 @@
 #include <DeviceConfig.h>
 #include <MqttManager.h>
 #include <NetworkManager.h>
-#include "interface/device-system-info.h"
 #include <time.h>
+#include "interface/system-info-builder.h"
 
 // External references
 extern MqttManager *mqttManager;
@@ -205,7 +205,9 @@ bool MqttRouting::publishDeviceStatus(const String &status)
 
 JsonDocument MqttRouting::buildDeviceSystemInfo()
 {
-    return buildDeviceSystemInfoJson();
+    JsonDocument doc;
+    ::buildDeviceSystemInfo(doc); // Use global helper function (:: prefix to avoid name conflict)
+    return doc;
 }
 
 void MqttRouting::handleSystemCommand(const String &topic, const String &message)

@@ -3,7 +3,8 @@
 
 #include <Arduino.h>
 #include <PubSubClient.h>
-#include <DeviceSystemInfo.h>
+#include <ArduinoJson.h>
+#include <Ethernet.h>
 
 class MqttHandler
 {
@@ -95,30 +96,33 @@ private:
 
     void publishHeartbeat()
     {
-        // Build JSON manually untuk hemat RAM
+        // Use StaticJsonDocument for MQTT heartbeat - compact version
+        StaticJsonDocument<128> doc;
+
+        // Device info
+        doc["device_id"] = "iot_led_panel";
+
+        // IP Address
+        IPAddress ip = Ethernet.localIP();
+        char ipBuf[16];
+        snprintf(ipBuf, sizeof(ipBuf), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+        doc["ip"] = ipBuf;
+
+        // Uptime
         unsigned long ms = millis();
-        unsigned long seconds = ms / 1000;
-        unsigned long hours = (seconds % 86400) / 3600;
-        unsigned long minutes = (seconds % 3600) / 60;
-        unsigned long secs = seconds % 60;
-        
-        // Calculate free RAM
+        doc["uptime_ms"] = ms;
+
+        // Free memory
         extern int __heap_start, *__brkval;
         int v;
         int freeRam = (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
-        
-        // IP Address
-        IPAddress ip = Ethernet.localIP();
-        
-        // Compact JSON for MQTT heartbeat
-        String json = "{";
-        json += "\"device_id\":\"iot_led_panel\",";
-        json += "\"ip\":\"" + String(ip[0]) + "." + String(ip[1]) + "." + String(ip[2]) + "." + String(ip[3]) + "\",";
-        json += "\"uptime_ms\":" + String(ms) + ",";
-        json += "\"free_memory\":" + String(freeRam) + "";
-        json += "}";
-        
-        client.publish(infoTopic, json.c_str());
+        doc["free_memory"] = freeRam;
+
+        // Serialize to string
+        char buffer[128];
+        serializeJson(doc, buffer, sizeof(buffer));
+
+        client.publish(infoTopic, buffer);
     }
 };
 

@@ -3,8 +3,8 @@
 
 #include <Arduino.h>
 #include <PubSubClient.h>
-#include <ArduinoJson.h>
 #include <Ethernet.h>
+#include <DeviceSystemInfo.h>
 
 class MqttHandler
 {
@@ -96,32 +96,10 @@ private:
 
     void publishHeartbeat()
     {
-        // Use StaticJsonDocument for MQTT heartbeat - compact version
-        StaticJsonDocument<128> doc;
-
-        // Device info
-        doc["device_id"] = "iot_led_panel";
-
-        // IP Address
-        IPAddress ip = Ethernet.localIP();
-        char ipBuf[16];
-        snprintf(ipBuf, sizeof(ipBuf), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-        doc["ip"] = ipBuf;
-
-        // Uptime
-        unsigned long ms = millis();
-        doc["uptime_ms"] = ms;
-
-        // Free memory
-        extern int __heap_start, *__brkval;
-        int v;
-        int freeRam = (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
-        doc["free_memory"] = freeRam;
-
-        // Serialize to string
+        // Use compact JSON for MQTT heartbeat - optimized
         char buffer[128];
-        serializeJson(doc, buffer, sizeof(buffer));
-
+        buildMqttCompactJson(buffer, sizeof(buffer));
+        
         client.publish(infoTopic, buffer);
     }
 };

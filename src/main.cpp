@@ -34,8 +34,7 @@ byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 IPAddress device_ip(192, 168, 1, 60);
 IPAddress subnet_mask(255, 255, 255, 0);
 IPAddress gateway(192, 168, 1, 1);
-IPAddress dns_primary(1, 1, 1, 1);
-IPAddress dns_secondary(8, 8, 8, 8);
+IPAddress dns_primary(8, 8, 8, 8);
 
 const char *mqtt_server = "192.168.1.1";
 const uint16_t mqtt_port = 1884;

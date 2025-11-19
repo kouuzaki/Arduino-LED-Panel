@@ -3,7 +3,6 @@
 
 #include <Arduino.h>
 #include <Ethernet.h>
-#include <ArduinoJson.h>
 #include <DeviceSystemInfo.h>
 
 class ApiHandler
@@ -28,37 +27,44 @@ public:
         if (!client)
             return;
 
-        // Read HTTP request line by line
-        String requestLine = "";
+        // Read HTTP request line with fixed buffer (no String concatenation!)
+        char requestLine[128];
+        int idx = 0;
         boolean foundRequestLine = false;
+        unsigned long timeout = millis() + 500; // 500ms timeout
         
-        while (client.connected())
+        while (client.connected() && millis() < timeout)
         {
             if (client.available())
             {
                 char c = client.read();
-                requestLine += c;
-                
-                // Check if we've read the complete request line
-                if (requestLine.endsWith("\r\n"))
+                if (idx < sizeof(requestLine) - 1)
                 {
-                    foundRequestLine = true;
-                    break;
+                    requestLine[idx++] = c;
+                    // Check for end of request line
+                    if (idx >= 2 && requestLine[idx-2] == '\r' && requestLine[idx-1] == '\n')
+                    {
+                        requestLine[idx-2] = '\0'; // Null terminate before \r\n
+                        foundRequestLine = true;
+                        break;
+                    }
                 }
             }
         }
 
-        if (!foundRequestLine)
+        if (!foundRequestLine || idx == 0)
         {
             client.stop();
             return;
         }
 
-        // Parse request line: "GET /api/device/info HTTP/1.1\r\n"
-        int firstSpace = requestLine.indexOf(' ');
-        int secondSpace = requestLine.indexOf(' ', firstSpace + 1);
+        // Parse request line: "GET /api/device/info HTTP/1.1"
+        char method[16] = {0};
+        char path[128] = {0};
         
-        if (firstSpace == -1 || secondSpace == -1)
+        int parsed = sscanf(requestLine, "%15s %127s", method, path);
+        
+        if (parsed != 2)
         {
             handleNotFound(client);
             delay(1);
@@ -66,20 +72,18 @@ public:
             return;
         }
 
-        String method = requestLine.substring(0, firstSpace);
-        String path = requestLine.substring(firstSpace + 1, secondSpace);
-
         // Normalize path: remove query string
-        int queryPos = path.indexOf('?');
-        if (queryPos != -1)
+        char *queryPos = strchr(path, '?');
+        if (queryPos != NULL)
         {
-            path = path.substring(0, queryPos);
+            *queryPos = '\0'; // Null terminate at ?
         }
 
-        // Remove trailing slash
-        if (path.length() > 1 && path.endsWith("/"))
+        // Remove trailing slash (but keep single /)
+        int pathLen = strlen(path);
+        if (pathLen > 1 && path[pathLen-1] == '/')
         {
-            path = path.substring(0, path.length() - 1);
+            path[pathLen-1] = '\0';
         }
 
         // Debug: print what we received
@@ -89,7 +93,7 @@ public:
         Serial.println(path);
 
         // Handle GET /api/device/info
-        if (method == "GET" && path == "/api/device/info")
+        if (strcmp(method, "GET") == 0 && strcmp(path, "/api/device/info") == 0)
         {
             handleDeviceInfo(client);
         }
@@ -116,70 +120,36 @@ private:
 
     void handleDeviceInfo(EthernetClient &client)
     {
-        // Build response to temporary buffer first
-        char buffer[400];
+        // Pre-calculate JSON size by building it to a buffer first
+        char tempBuffer[350];
         
-        // Create doc dan serialize to buffer
-        StaticJsonDocument<256> doc;
-        
-        // Device info
-        doc["device_id"] = "iot_led_panel";
-
-        // Calculate uptime
         unsigned long ms = millis();
         unsigned long seconds = ms / 1000;
         unsigned long hours = (seconds % 86400) / 3600;
         unsigned long minutes = (seconds % 3600) / 60;
         unsigned long secs = seconds % 60;
 
-        // IP Address
         IPAddress ip = Ethernet.localIP();
-        char ipBuf[16];
-        snprintf(ipBuf, sizeof(ipBuf), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-        doc["ip"] = ipBuf;
 
-        doc["mac_address"] = "DE:AD:BE:EF:FE:ED";
-
-        // Uptime string HH:mm:ss
-        char uptimeBuf[12];
-        snprintf(uptimeBuf, sizeof(uptimeBuf), "%02lu:%02lu:%02lu", hours, minutes, secs);
-        doc["uptime"] = uptimeBuf;
-
-        doc["uptime_ms"] = ms;
-
-        // Free memory
         extern int __heap_start, *__brkval;
         int v;
         int freeRam = (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
-        doc["free_memory"] = freeRam;
-        doc["total_memory"] = 2048;
 
-        // Network config
-        JsonObject network = doc.createNestedObject("network");
-        network["gateway"] = "192.168.1.1";
-        network["subnet_mask"] = "255.255.255.0";
-        network["dns_primary"] = "192.168.1.1";
-        network["dns_secondary"] = "8.8.8.8";
-
-        // Services
-        JsonObject services = doc.createNestedObject("services");
-        services["api"] = "running";
-        services["mqtt"] = "active";
-        services["led_panel"] = "scanning";
-
-        // Serialize to buffer
-        int contentLength = serializeJson(doc, buffer, sizeof(buffer));
+        // Calculate content length
+        int len = snprintf(tempBuffer, sizeof(tempBuffer),
+            "{\"device_id\":\"iot_led_panel\",\"ip\":\"%d.%d.%d.%d\",\"mac_address\":\"DE:AD:BE:EF:FE:ED\",\"uptime\":\"%02lu:%02lu:%02lu\",\"uptime_ms\":%lu,\"free_memory\":%d,\"total_memory\":2048,\"network\":{\"gateway\":\"192.168.1.1\",\"subnet_mask\":\"255.255.255.0\",\"dns_primary\":\"192.168.1.1\",\"dns_secondary\":\"8.8.8.8\"},\"services\":{\"api\":\"running\",\"mqtt\":\"active\",\"led_panel\":\"scanning\"}}",
+            ip[0], ip[1], ip[2], ip[3], hours, minutes, secs, ms, freeRam);
         
-        // Send headers with accurate Content-Length
+        // Send HTTP headers with accurate Content-Length
         client.println("HTTP/1.1 200 OK");
         client.println("Content-Type: application/json");
         client.print("Content-Length: ");
-        client.println(contentLength);
+        client.println(len);
         client.println("Connection: close");
         client.println();
         
         // Send JSON body
-        client.print(buffer);
+        client.print(tempBuffer);
     }
 
     void handleNotFound(EthernetClient &client)

@@ -1,0 +1,46 @@
+{
+  "name": "HUB08Panel",
+  "version": "1.0.0",
+  "description": "High-performance ISR-driven HUB08 LED matrix controller for P4.75 64x32 panels with dual data pins, 625Hz refresh, double buffering, and Adafruit_GFX compatibility.",
+  "keywords": [
+    "HUB08",
+    "LED",
+    "Matrix",
+    "Display",
+    "Panel",
+    "Adafruit-GFX",
+    "ISR",
+    "PWM"
+  ],
+  "repository":
+  {
+    "type": "git",
+    "url": "https://github.com/kouuzaki/HUB08Panel.git"
+  },
+  "authors":
+  [
+    {
+      "name": "kouuzaki",
+      "email": "",
+      "url": "https://github.com/kouuzaki",
+      "maintainer": true
+    }
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/kouuzaki/HUB08Panel",
+  "dependencies": {
+    "adafruit/Adafruit GFX Library": "^1.12.0"
+  },
+  "frameworks": ["arduino"],
+  "platforms": ["atmelavr"],
+  "export": {
+    "include": [
+      "src/",
+      "library.json",
+      "library.properties",
+      "README.md",
+      "keywords.txt",
+      "examples/"
+    ]
+  }
+}

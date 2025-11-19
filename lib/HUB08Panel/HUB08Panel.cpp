@@ -3,22 +3,262 @@
 
 // Brightness dimming curve
 static const uint8_t dim_curve[256] PROGMEM = {
-    0,   1,   1,   2,   2,   2,   2,   2,   2,   3,   3,   3,   3,   3,   3,   3,
-    3,   3,   3,   3,   3,   3,   3,   4,   4,   4,   4,   4,   4,   4,   4,   4,
-    4,   4,   4,   5,   5,   5,   5,   5,   5,   5,   5,   5,   5,   6,   6,   6,
-    6,   6,   6,   6,   6,   7,   7,   7,   7,   7,   7,   7,   8,   8,   8,   8,
-    8,   8,   9,   9,   9,   9,   9,   9,   10,  10,  10,  10,  10,  11,  11,  11,
-    11,  11,  12,  12,  12,  12,  12,  13,  13,  13,  13,  14,  14,  14,  14,  15,
-    15,  15,  16,  16,  16,  16,  17,  17,  17,  18,  18,  18,  19,  19,  19,  20,
-    20,  20,  21,  21,  22,  22,  22,  23,  23,  24,  24,  24,  25,  25,  26,  26,
-    27,  27,  28,  28,  29,  29,  30,  30,  31,  32,  32,  33,  33,  34,  35,  35,
-    36,  36,  37,  38,  38,  39,  40,  40,  41,  42,  43,  43,  44,  45,  46,  47,
-    47,  48,  49,  50,  50,  51,  52,  53,  54,  55,  56,  56,  57,  58,  59,  60,
-    61,  62,  63,  64,  65,  66,  67,  68,  69,  70,  71,  72,  73,  74,  75,  76,
-    77,  78,  79,  80,  81,  82,  84,  85,  86,  87,  88,  89,  91,  92,  93,  94,
-    95,  97,  98,  99,  100, 102, 103, 104, 106, 107, 109, 110, 111, 113, 114, 116,
-    117, 119, 120, 121, 123, 125, 126, 128, 129, 131, 132, 134, 136, 137, 139, 141,
-    142, 144, 146, 147, 149, 151, 153, 154, 156, 158, 160, 162, 163, 165, 167, 169,
+    0,
+    1,
+    1,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    8,
+    8,
+    8,
+    8,
+    8,
+    8,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    10,
+    10,
+    10,
+    10,
+    10,
+    11,
+    11,
+    11,
+    11,
+    11,
+    12,
+    12,
+    12,
+    12,
+    12,
+    13,
+    13,
+    13,
+    13,
+    14,
+    14,
+    14,
+    14,
+    15,
+    15,
+    15,
+    16,
+    16,
+    16,
+    16,
+    17,
+    17,
+    17,
+    18,
+    18,
+    18,
+    19,
+    19,
+    19,
+    20,
+    20,
+    20,
+    21,
+    21,
+    22,
+    22,
+    22,
+    23,
+    23,
+    24,
+    24,
+    24,
+    25,
+    25,
+    26,
+    26,
+    27,
+    27,
+    28,
+    28,
+    29,
+    29,
+    30,
+    30,
+    31,
+    32,
+    32,
+    33,
+    33,
+    34,
+    35,
+    35,
+    36,
+    36,
+    37,
+    38,
+    38,
+    39,
+    40,
+    40,
+    41,
+    42,
+    43,
+    43,
+    44,
+    45,
+    46,
+    47,
+    47,
+    48,
+    49,
+    50,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    56,
+    57,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63,
+    64,
+    65,
+    66,
+    67,
+    68,
+    69,
+    70,
+    71,
+    72,
+    73,
+    74,
+    75,
+    76,
+    77,
+    78,
+    79,
+    80,
+    81,
+    82,
+    84,
+    85,
+    86,
+    87,
+    88,
+    89,
+    91,
+    92,
+    93,
+    94,
+    95,
+    97,
+    98,
+    99,
+    100,
+    102,
+    103,
+    104,
+    106,
+    107,
+    109,
+    110,
+    111,
+    113,
+    114,
+    116,
+    117,
+    119,
+    120,
+    121,
+    123,
+    125,
+    126,
+    128,
+    129,
+    131,
+    132,
+    134,
+    136,
+    137,
+    139,
+    141,
+    142,
+    144,
+    146,
+    147,
+    149,
+    151,
+    153,
+    154,
+    156,
+    158,
+    160,
+    162,
+    163,
+    165,
+    167,
+    169,
 };
 
 // Static instance untuk interrupt service routine
@@ -51,8 +291,10 @@ inline void setMultiplePinsHigh(int8_t p1, int8_t p2, int8_t p3 = -1, int8_t p4 
 {
     digitalWrite(p1, HIGH);
     digitalWrite(p2, HIGH);
-    if (p3 >= 0) digitalWrite(p3, HIGH);
-    if (p4 >= 0) digitalWrite(p4, HIGH);
+    if (p3 >= 0)
+        digitalWrite(p3, HIGH);
+    if (p4 >= 0)
+        digitalWrite(p4, HIGH);
 }
 
 // Helper function untuk set multiple pins LOW
@@ -60,8 +302,10 @@ inline void setMultiplePinsLow(int8_t p1, int8_t p2, int8_t p3 = -1, int8_t p4 =
 {
     digitalWrite(p1, LOW);
     digitalWrite(p2, LOW);
-    if (p3 >= 0) digitalWrite(p3, LOW);
-    if (p4 >= 0) digitalWrite(p4, LOW);
+    if (p3 >= 0)
+        digitalWrite(p3, LOW);
+    if (p4 >= 0)
+        digitalWrite(p4, LOW);
 }
 
 // Initialize dengan dual data pins configuration (R1/R2) untuk 64x32 panel
@@ -117,9 +361,6 @@ bool HUB08_Panel::begin(const HUB08_Config &cfg)
     // Initialize pin states - set data, clock, latch LOW; enable HIGH
     setMultiplePinsLow(config.data_pin_r1, config.data_pin_r2, config.clock_pin, config.latch_pin);
     digitalWrite(config.enable_pin, HIGH); // OE is active LOW, so HIGH = disabled initially
-
-    // Set PWM untuk brightness control menggunakan analogWrite (Arduino Uno compatible)
-    analogWrite(config.enable_pin, 128); // Default brightness
 
     // Clear buffer
     memset(frameBuffer, 0, bufferSize);
@@ -179,29 +420,29 @@ void HUB08_Panel::startScanning(uint32_t frequency)
     // Timer1 runs at 16MHz / prescaler
     // For ~adjustedFreq Hz scanning frequency
     // We want interrupts at adjustedFreq * config.panel_scan Hz
-    
+
     cli(); // Disable interrupts during setup
-    
+
     // Set Timer1 ke CTC mode
     TCCR1A = 0;
     TCCR1B = 0;
     TCNT1 = 0;
-    
+
     // CTC mode (mode 4)
     TCCR1B |= (1 << WGM12);
-    
+
     // Set prescaler ke 64
     TCCR1B |= (1 << CS10) | (1 << CS11);
-    
+
     // OCR1A untuk frequency calculation
     // freq = 16MHz / (prescaler * (OCR1A + 1))
     // OCR1A = (16MHz / (prescaler * freq)) - 1
     uint16_t ocr = (16000000UL / (64UL * adjustedFreq)) - 1;
     OCR1A = ocr;
-    
+
     // Enable Timer1 Compare A interrupt
     TIMSK1 |= (1 << OCIE1A);
-    
+
     sei(); // Enable interrupts
 }
 
@@ -209,7 +450,7 @@ void HUB08_Panel::startScanning(uint32_t frequency)
 void HUB08_Panel::stopScanning()
 {
     scanEnabled = false;
-    
+
     // Disable Timer1 Compare A interrupt
     TIMSK1 &= ~(1 << OCIE1A);
 }
@@ -298,8 +539,9 @@ void HUB08_Panel::enableOutputFast(bool enable)
 // Clear physical display - Arduino Uno compatible
 void HUB08_Panel::clearDisplay()
 {
-    // Disable output
-    digitalWrite(stored_enable, HIGH); // Set HIGH (disable)
+    // Disable output using PWM (255 = HIGH = disabled)
+    analogWrite(stored_enable, 255); // OE disabled
+    delayMicroseconds(5);
 
     for (uint16_t row = 0; row < maxRows; row++)
     {
@@ -326,11 +568,11 @@ void HUB08_Panel::clearDisplay()
         delayMicroseconds(1);
     }
 
-    // Keep output disabled after clearing
-    digitalWrite(stored_enable, HIGH); // Set HIGH (disable)
+    // Keep output disabled after clearing (PWM = 255)
+    analogWrite(stored_enable, 255); // OE disabled
 }
 
-// Scan single row dengan dual data pins (R1/R2) - Arduino Uno compatible
+// Scan single row - Dual data pins (R1/R2) for 64x32 panel
 void HUB08_Panel::scan()
 {
     if (!initialized)
@@ -339,33 +581,29 @@ void HUB08_Panel::scan()
     static uint8_t row = 0; // from 0 to 15 (panel_scan)
     uint16_t totalWidth = config.panel_width * config.chain_length;
 
-    // Calculate head pointer untuk upper half (R1)
+    // Calculate pointers for upper half (R1) and lower half (R2)
     uint8_t *upperHead = frameBuffer + row * (totalWidth / 8);
     uint8_t *lowerHead = nullptr;
 
-    // For 64x32 panel: lower half adalah row + 16
+    // For 64x32 panel: lower half is row + 16
     if (config.panel_height > config.panel_scan)
     {
         lowerHead = frameBuffer + (row + config.panel_scan) * (totalWidth / 8);
     }
 
-    // Shift out data dengan dual data pins
+    // Shift out data with DUAL data pins (R1 for upper, R2 for lower)
     for (uint8_t byte = 0; byte < (totalWidth / 8); byte++)
     {
-        uint8_t upperPixels = *upperHead;
-        uint8_t lowerPixels = lowerHead ? *lowerHead : 0x00;
+        uint8_t upperPixels = *upperHead++;
+        uint8_t lowerPixels = lowerHead ? *lowerHead++ : 0x00;
 
-        upperHead++;
-        if (lowerHead)
-            lowerHead++;
-
-        // Shift out 8 bits, MSB first dengan dual data pins
+        // Shift out 8 bits, MSB first
         for (uint8_t bit = 0; bit < 8; bit++)
         {
-            // Set data pins
             bool upperBit = upperPixels & (0x80 >> bit);
             bool lowerBit = lowerPixels & (0x80 >> bit);
 
+            // Set BOTH data pins (R1 and R2)
             digitalWrite(stored_data_r1, upperBit ? HIGH : LOW);
             digitalWrite(stored_data_r2, lowerBit ? HIGH : LOW);
 
@@ -375,30 +613,28 @@ void HUB08_Panel::scan()
         }
     }
 
-    // Wait for OE to go HIGH
-    delayMicroseconds(1);
+    // CRITICAL: Wait for OE to go HIGH before changing rows
+    uint16_t timeout = 2000;
+    while (digitalRead(stored_enable) == LOW && --timeout > 0)
+        ;
 
-    // Set address pins
-    digitalWrite(stored_addr_a, LOW);
-    digitalWrite(stored_addr_b, LOW);
-    digitalWrite(stored_addr_c, LOW);
-    digitalWrite(stored_addr_d, LOW);
+    // Set address pins for row selection
+    digitalWrite(stored_addr_a, (row & 0x01) ? HIGH : LOW);
+    if (addressBits >= 2)
+        digitalWrite(stored_addr_b, (row & 0x02) ? HIGH : LOW);
+    if (addressBits >= 3)
+        digitalWrite(stored_addr_c, (row & 0x04) ? HIGH : LOW);
+    if (addressBits >= 4)
+        digitalWrite(stored_addr_d, (row & 0x08) ? HIGH : LOW);
 
-    if (row & 0x01)
-        digitalWrite(stored_addr_a, HIGH);
-    if ((row & 0x02) && addressBits >= 2)
-        digitalWrite(stored_addr_b, HIGH);
-    if ((row & 0x04) && addressBits >= 3)
-        digitalWrite(stored_addr_c, HIGH);
-    if ((row & 0x08) && addressBits >= 4)
-        digitalWrite(stored_addr_d, HIGH);
-
-    // Toggle latch
+    // CRITICAL: Double toggle latch
+    digitalWrite(stored_latch, HIGH);
+    digitalWrite(stored_latch, LOW);
     digitalWrite(stored_latch, HIGH);
     digitalWrite(stored_latch, LOW);
 
-    // Next row
-    row = (row + 1) % config.panel_scan;
+    // Next row (wraps from 15 back to 0)
+    row = (row + 1) & (config.panel_scan - 1);
 }
 
 // Draw pixel (override from Adafruit_GFX)
@@ -453,12 +689,20 @@ void HUB08_Panel::clearScreen()
     }
 }
 
-// Set brightness - Arduino Uno compatible dengan analogWrite
+// Set brightness - Arduino Mega dengan 32kHz PWM (as per HUB08SPI reference)
 void HUB08_Panel::setBrightness(uint8_t brt)
 {
     brightness = brt;
+
+// Setup 32kHz PWM on pin 3 (Timer 3 on Mega) untuk flicker-free
+// Reference: HUB08SPI.cpp line: TCCR2B = TCCR2B & 0b11111000 | 0x01;
+#ifdef ARDUINO_AVR_MEGA2560
+    TCCR3B = (TCCR3B & 0b11111000) | 0x01; // 32kHz PWM on pin 3
+#endif
+
     // Gunakan dim_curve untuk brightness control
     uint8_t pwmValue = 255 - pgm_read_byte(&dim_curve[brt]);
+    // Apply brightness langsung dengan PWM
     analogWrite(stored_enable, pwmValue);
 }
 
@@ -664,8 +908,8 @@ uint16_t HUB08_Panel::color565(uint8_t r, uint8_t g, uint8_t b)
     return (r > 0 || g > 0 || b > 0) ? 1 : 0;
 }
 
-// Timer1 Compare A ISR untuk Arduino Uno
-#ifdef ARDUINO_AVR_UNO
+// Timer1 Compare A ISR untuk Arduino Uno & Mega
+#if defined(ARDUINO_AVR_UNO) || defined(ARDUINO_AVR_MEGA2560)
 ISR(TIMER1_COMPA_vect)
 {
     if (HUB08_Panel::instance)

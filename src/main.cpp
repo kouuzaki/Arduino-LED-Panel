@@ -1,145 +1,116 @@
+// ============================================
+// LED Panel 3-Second Text Demo
+// ============================================
+// Simple demo that displays text for 3 seconds
+// No serial commands - just startup display
+// ============================================
+
 #include <Arduino.h>
-#include <SPI.h>
-#include <Ethernet.h>
-#include <DeviceSystemInfo.h>
-#include <PubSubClient.h>
 #include <HUB08Panel.h>
 #include <Fonts/FreeSans9pt7b.h>
-#include "handlers/api_handler.h"
-#include "handlers/mqtt_handler.h"
-#include "handlers/mqtt_text_handler.h"
 
 // ============================================
-// LED Panel Configuration
+// LED Panel Configuration - Arduino Mega (ATmega2560)
 // ============================================
-#define DATA_PIN_R1 22
-#define DATA_PIN_R2 23
-#define CLOCK_PIN 24
-#define LATCH_PIN 25
-#define ENABLE_PIN 26
-#define ADDR_A 27
-#define ADDR_B 28
-#define ADDR_C 29
-#define ADDR_D 30
+// IMPORTANT: ENABLE_PIN MUST be a PWM-capable pin!
+// PWM pins on Mega: 2-13, 44-46
+#define DATA_PIN_R1 22 // Upper half data
+#define DATA_PIN_R2 23 // Lower half data
+#define CLOCK_PIN 24   // Shift clock
+#define LATCH_PIN 25   // Latch
+#define ENABLE_PIN 3   // OE - MUST BE PWM PIN! (Pin 3 is PWM on Mega)
+#define ADDR_A 27      // Address A
+#define ADDR_B 28      // Address B
+#define ADDR_C 29      // Address C
+#define ADDR_D 30      // Address D
 
-#define PANEL_WIDTH 64
-#define PANEL_HEIGHT 32
-#define PANEL_CHAIN 2
-#define PANEL_SCAN 16
+#define PANEL_WIDTH 64  // Single panel width
+#define PANEL_HEIGHT 32 // Single panel height
+#define PANEL_CHAIN 1   // Number of panels chained
+#define PANEL_SCAN 16   // 1/16 scan rate
 
 HUB08_Panel ledPanel(PANEL_WIDTH, PANEL_HEIGHT, PANEL_CHAIN);
 
-// ============================================
-// Network Configuration
-// ============================================
-byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
-IPAddress device_ip(192, 168, 1, 60);
-IPAddress subnet_mask(255, 255, 255, 0);
-IPAddress gateway(192, 168, 1, 1);
-IPAddress dns_primary(8, 8, 8, 8);
-
-const char *mqtt_server = "192.168.1.1";
-const uint16_t mqtt_port = 1884;
-const char *mqtt_username = "edgeadmin";
-const char *mqtt_password = "edge123";
-const char *device_name = "iot_led_panel";
-
-// ============================================
-// Handlers
-// ============================================
-EthernetClient ethClient;
-PubSubClient mqttClient(ethClient);
-
-ApiHandler apiHandler;
-MqttHandler mqttHandler(mqttClient, device_name);
-MqttTextHandler textHandler(mqttClient, ledPanel, device_name);
-
-// Status monitoring
-unsigned long lastStatusCheck = 0;
-const unsigned long STATUS_INTERVAL = 5000; // 5 seconds
-
-// MQTT callback untuk handle incoming messages
-void mqttCallback(char *topic, byte *payload, unsigned int length)
-{
-  textHandler.handleMessage(topic, payload, length);
-}
-
 void setup()
 {
+  // Initialize serial dengan delay untuk stabilisasi
   Serial.begin(115200);
-  delay(1000);
-  Serial.println("Start");
+  delay(500); // CRITICAL: Wait untuk serial port siap
+
+  // Flush any garbage data
+  while (Serial.available())
+    Serial.read();
+
+  Serial.println("\n\n=== LED Panel Test ===");
+  Serial.println("Starting...");
 
   // Initialize LED Panel
   if (ledPanel.begin(DATA_PIN_R1, DATA_PIN_R2, CLOCK_PIN, LATCH_PIN, ENABLE_PIN,
                      ADDR_A, ADDR_B, ADDR_C, ADDR_D,
                      PANEL_WIDTH, PANEL_HEIGHT, PANEL_CHAIN, PANEL_SCAN))
   {
-    Serial.println("Panel OK");
-    ledPanel.startScanning(100);
-    ledPanel.clearScreen();
+    Serial.println("Panel initialized!");
+    delay(100);
+
+    Serial.println("Starting scanning...");
+    // Start scanning first
+    // Lower refresh rate to avoid ISR starvation (digitalWrite is slow)
+    ledPanel.startScanning(30);
+    Serial.println("Scanning started.");
+    delay(100);
+
+    // Set brightness
+    Serial.println("Setting brightness...");
     ledPanel.setBrightness(200);
-    
-    // Set Adafruit font untuk text rendering
+    delay(50);
+
+    Serial.println("Starting pattern tests...");
+
+    // TEST 1: Fill screen (should see solid rectangle)
+    Serial.println("TEST 1: Full screen ON");
+    ledPanel.fillScreen(1);
+    delay(2000);
+
+    // TEST 2: Clear screen
+    Serial.println("TEST 2: Clear screen");
+    ledPanel.fillScreen(0);
+    delay(500);
+
+    // TEST 3: Draw simple rectangle
+    Serial.println("TEST 3: Rectangle");
+    ledPanel.drawRect(5, 5, 50, 20, 1);
+    delay(2000);
+
+    // TEST 4: Clear and test text WITHOUT custom font first
+    Serial.println("TEST 4: Default font text");
+    ledPanel.fillScreen(0);
+    ledPanel.setTextColor(1);
+    ledPanel.setCursor(2, 8);
+    ledPanel.print("TEST"); // Default font
+    delay(2000);
+
+    // TEST 5: Now try Adafruit font
+    Serial.println("TEST 5: Adafruit font");
+    ledPanel.fillScreen(0);
     ledPanel.setAdafruitFont(&FreeSans9pt7b);
-    ledPanel.setTextColor(1); // White/On
-    ledPanel.setCursor(0, 16);
-    ledPanel.print("Ready");
+    ledPanel.setTextColor(1);
+    ledPanel.setCursor(2, 20);
+    ledPanel.print("Hello");
+
+    Serial.println("✓ Tests complete!");
+    delay(3000);
+
+    ledPanel.fillScreen(0);
   }
-
-  // Initialize Ethernet
-  Ethernet.begin(mac, device_ip, dns_primary, gateway, subnet_mask);
-  delay(1000);
-  Serial.print("Eth:");
-  Serial.println(Ethernet.localIP());
-
-  // Initialize API Server
-  apiHandler.begin();
-  Serial.println("API:8080");
-
-  // Initialize MQTT with callback
-  mqttClient.setCallback(mqttCallback);
-  mqttHandler.connect(mqtt_server, mqtt_port, mqtt_username, mqtt_password);
-  Serial.println("MQTT:Setup");
+  else
+  {
+    Serial.println("✗ Panel init FAILED!");
+    Serial.println("Check wiring!");
+  }
 }
 
 void loop()
 {
-  // Handle API requests
-  apiHandler.handleClient();
-
-  // Handle MQTT
-  mqttHandler.update();
-
-  // Print status every 5 seconds
-  unsigned long now = millis();
-  if (now - lastStatusCheck > STATUS_INTERVAL)
-  {
-    lastStatusCheck = now;
-    
-    // Check Ethernet (simple: check if localIP is not 0.0.0.0)
-    Serial.print("Eth:");
-    IPAddress ip = Ethernet.localIP();
-    if (ip != INADDR_NONE && ip[0] != 0)
-    {
-      Serial.println("OK");
-    }
-    else
-    {
-      Serial.println("DOWN");
-    }
-    
-    // Check MQTT
-    Serial.print("MQTT:");
-    if (mqttHandler.isConnected())
-    {
-      Serial.println("OK");
-    }
-    else
-    {
-      Serial.println("FAIL");
-    }
-  }
-
-  delay(10);
+  // Nothing to do - just keep the panel running
+  delay(100);
 }

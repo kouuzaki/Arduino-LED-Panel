@@ -213,6 +213,38 @@ The library includes 5 professional Roboto fonts stored in PROGMEM. Access them 
 | `HUB08Fonts::Roboto_Bold_14` | 14pt | Medium-large text, emphasis                       |
 | `HUB08Fonts::Roboto_Bold_15` | 15pt | Large text, professional appearance (recommended) |
 
+### 🔄 **Adafruit_GFX Font Compatibility**
+
+Since `HUB08_Panel` extends `Adafruit_GFX`, you can also use **any Adafruit_GFX compatible font**:
+
+```cpp
+#include "HUB08Panel.h"
+#include <Fonts/FreeMonoBold9pt7b.h>       // External Adafruit font
+#include <Fonts/FreeSansBold12pt7b.h>      // Another Adafruit font
+
+HUB08_Panel display(64, 32, 1);
+
+void setup() {
+    display.begin(R1, R2, CLK, LAT, OE, A, B, C, D, 64, 32, 1, 16);
+
+    // Use ANY Adafruit_GFX font directly
+    display.setFont(&FreeMonoBold9pt7b);   // Built-in Adafruit font
+    display.setTextSize(1);
+    display.setTextColor(1);
+
+    display.setCursor(0, 15);
+    display.print("Hello!");
+    display.swapBuffers(true);
+}
+```
+
+**Available Adafruit fonts** (from Adafruit_GFX library):
+- `FreeMono9pt7b`, `FreeMonoBold9pt7b`, `FreeMonoOblique9pt7b`, etc.
+- `FreeSans9pt7b`, `FreeSansBold9pt7b`, `FreeSansOblique9pt7b`, etc.
+- `FreeSerif9pt7b`, `FreeSerifBold9pt7b`, `FreeSerifItalic9pt7b`, etc.
+
+All standard Adafruit_GFX fonts work seamlessly with this library.
+
 ### Using Fonts
 
 ```cpp
@@ -224,10 +256,13 @@ HUB08_Panel display(64, 32, 1);
 void setup() {
     display.begin(R1, R2, CLK, LAT, OE, A, B, C, D, 64, 32, 1, 16);
 
-    // Select font using namespace (with IDE auto-complete)
+    // Method 1: Use built-in Roboto fonts
     display.setFont(HUB08Fonts::Roboto_Bold_15);
     display.setTextSize(1);
     display.setTextColor(1);
+
+    // Method 2: Use Adafruit_GFX fonts
+    // display.setFont(&FreeMonoBold9pt7b);  // Uncomment to use Adafruit font
 
     // Draw text
     display.setCursor(0, 15);
@@ -238,12 +273,18 @@ void setup() {
 
 ### Font Characteristics
 
-All fonts are:
+**Built-in Roboto Fonts:**
 
 - **Proportional**: Variable width per character for natural spacing
 - **PROGMEM stored**: Saves RAM (entire font ~2-5 KB each in flash)
 - **Adafruit_GFX format**: Compatible with standard Adafruit drawing commands
 - **Gamma-corrected rendering**: Works seamlessly with brightness control
+
+**Adafruit_GFX Fonts:**
+
+- **Full compatibility**: All Adafruit fonts work out-of-the-box
+- **No additional setup**: Just include the font header and call `setFont()`
+- **Mix and match**: Can switch between Roboto and Adafruit fonts in your code
 
 ---
 

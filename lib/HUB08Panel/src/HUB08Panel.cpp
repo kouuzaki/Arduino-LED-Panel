@@ -1,0 +1,421 @@
+#include "HUB08Panel.h"
+
+/// Static instance pointer (set in constructor)
+HUB08_Panel *HUB08_Panel::instance = nullptr;
+
+/**
+ * @brief Timer1 Compare Match A interrupt service routine @ 10 kHz
+ * Calls scan() to display the next row. Fired every 100 microseconds.
+ * This provides a 10 kHz row scan rate = 625 Hz full refresh (16 rows)
+ */
+ISR(TIMER1_COMPA_vect)
+{
+    if (HUB08_Panel::instance)
+        HUB08_Panel::instance->scan();
+}
+
+HUB08_Panel::HUB08_Panel(uint16_t w, uint16_t h, uint16_t chain)
+    : Adafruit_GFX(w * chain, h)
+{
+    /// Calculate buffer size: 1 bit per pixel
+    bufferSize = (w * chain * h) / 8;
+    bufferFront = nullptr;
+    bufferBack = nullptr;
+    brightness = 255;
+    initialized = false;
+    instance = this; // Set static instance for ISR access
+}
+
+/**
+ * @brief Initialize hardware configuration and timers
+ * @details Sets up:
+ *   - GPIO pins for data, clock, latch, address, and OE
+ *   - Timer2 @ 31 kHz PWM on OE pin (D3) for brightness control
+ *   - Timer1 @ 10 kHz CTC mode for row scanning ISR
+ * @return true if initialization succeeded, false if memory allocation failed
+ */
+bool HUB08_Panel::begin(const HUB08_Config &cfg)
+{
+    config = cfg;
+
+    /// Allocate two buffers (double buffering strategy)
+    /// Front buffer: read by ISR during scan()
+    /// Back buffer: written to by Adafruit_GFX drawing functions
+    uint8_t *raw = (uint8_t *)malloc(bufferSize * 2);
+    if (!raw)
+        return false;
+
+    bufferFront = raw;
+    bufferBack = raw + bufferSize;
+
+    /// Initialize both buffers to black (0x00)
+    memset(bufferFront, 0, bufferSize);
+    memset(bufferBack, 0, bufferSize);
+
+    /// Configure GPIO pins as outputs
+    pinMode(cfg.data_pin_r1, OUTPUT); // D8  → PORTB[0]
+    pinMode(cfg.data_pin_r2, OUTPUT); // D9  → PORTB[1]
+    pinMode(cfg.clock_pin, OUTPUT);   // D10 → PORTB[2]
+    pinMode(cfg.latch_pin, OUTPUT);   // D11 → PORTB[3]
+    pinMode(cfg.enable_pin, OUTPUT);  // D3  → PORTD[3] (OC2B/Timer2)
+
+    pinMode(cfg.addr_a, OUTPUT); // A0 → PORTC[0]
+    pinMode(cfg.addr_b, OUTPUT); // A1 → PORTC[1]
+    pinMode(cfg.addr_c, OUTPUT); // A2 → PORTC[2]
+    pinMode(cfg.addr_d, OUTPUT); // A3 → PORTC[3]
+
+    /// ========== Setup Timer2 for PWM brightness control on OE pin (D3) ==========
+    /// Use analogWrite() to configure Timer2 in Fast PWM mode
+    analogWrite(cfg.enable_pin, 128);
+
+    /// Change Timer2 prescaler to 1 for ~31 kHz PWM frequency (finer resolution)
+    TCCR2B = (TCCR2B & 0b11111000) | 0x01;
+
+    /// Set initial brightness using gamma curve
+    uint8_t dim = pgm_read_byte(&dim_curve[brightness]);
+    /// OE is active LOW: small PWM value = bright output
+    OCR2B = 255 - dim;
+
+    initialized = true;
+
+    /// ========== Setup Timer1 for row refresh scanning ==========
+    /// CTC mode, no prescaling: 16 MHz / (1599+1) = 10 kHz
+    cli(); // Disable interrupts during timer setup
+
+    TCCR1A = 0; // Clear control register
+    TCCR1B = 0; // Clear control register
+    TCNT1 = 0;  // Clear counter
+
+    /// Set compare match value for 10 kHz rate
+    OCR1A = 1599;
+
+    /// Enable CTC (Clear Timer on Compare Match) mode
+    TCCR1B |= (1 << WGM12);
+
+    /// Set prescaler to 1 (no prescaling)
+    TCCR1B |= (1 << CS10);
+
+    /// Enable Timer1 Compare Match A interrupt
+    TIMSK1 |= (1 << OCIE1A);
+
+    sei(); // Re-enable interrupts
+
+    return true;
+}
+
+/**
+ * @brief Parameterized initialization (convenience wrapper)
+ * Creates HUB08_Config from individual pin parameters and calls begin(cfg)
+ */
+bool HUB08_Panel::begin(
+    int8_t r1, int8_t r2, int8_t clk, int8_t lat, int8_t oe,
+    int8_t A, int8_t B, int8_t C, int8_t D,
+    uint16_t w, uint16_t h, uint16_t chain, uint8_t scan)
+{
+    HUB08_Config cfg;
+
+    cfg.data_pin_r1 = r1;
+    cfg.data_pin_r2 = r2;
+    cfg.clock_pin = clk;
+    cfg.latch_pin = lat;
+    cfg.enable_pin = oe;
+
+    cfg.addr_a = A;
+    cfg.addr_b = B;
+    cfg.addr_c = C;
+    cfg.addr_d = D;
+
+    cfg.panel_width = w;
+    cfg.panel_height = h;
+    cfg.chain_length = chain;
+    cfg.panel_scan = scan;
+
+    return begin(cfg);
+}
+
+/**
+ * @brief Scan and display a single row
+ * Called by Timer1 ISR every 100 µs (10 kHz). Advances through all 16 rows
+ * in sequence, creating a complete refresh cycle.
+ *
+ * Procedure:
+ *   1. Disable output temporarily (OE HIGH to prevent ghosting during shift)
+ *   2. Shift 8 bytes (64 pixels) via R1/R2 data pins using direct port access
+ *   3. Set row address (A-D bits)
+ *   4. Pulse latch to load data into row latches
+ *   5. Restore OE PWM brightness control
+ *   6. Advance to next row (wraps 0→15→0)
+ *
+ * Performance: ~90 µs per row scan (leaves ~10 µs margin within 100 µs ISR period)
+ */
+void HUB08_Panel::scan()
+{
+    if (!initialized)
+        return;
+
+    static uint8_t row = 0;
+
+    /// Calculate bytes per row: (width × chain) / 8 pixels per byte
+    uint8_t bytesPerRow = (config.panel_width * config.chain_length) / 8;
+
+    /// Get pointers to front buffer data for this row
+    uint8_t *upper = bufferFront + row * bytesPerRow;
+    uint8_t *lower = nullptr;
+
+    /// For 64×32 1/16 scan: lower half is offset by 16 rows
+    if (config.panel_height >= (config.panel_scan * 2))
+        lower = bufferFront + (row + config.panel_scan) * bytesPerRow;
+
+    /// ===== Disable OE during data shifting to prevent ghosting =====
+    uint8_t savedOCR2B = OCR2B;
+    OCR2B = 255; // OE HIGH = output disabled
+
+    /// ===== SHIFT DATA via PORTB (R1/R2 pins + clock) =====
+    /// Direct port manipulation is ~10-20× faster than digitalWrite
+    /// PORTB bit mapping:
+    ///   [0] = D8  (R1 data)
+    ///   [1] = D9  (R2 data)
+    ///   [2] = D10 (CLK)
+    ///   [3] = D11 (LAT)
+
+    for (uint8_t i = 0; i < bytesPerRow; i++)
+    {
+        uint8_t ur = upper[i];                // Upper half byte
+        uint8_t lr = lower ? lower[i] : 0x00; // Lower half byte (or 0 if not used)
+
+        /// Shift 8 bits per byte, MSB first (0x80 = 10000000)
+        for (uint8_t b = 0; b < 8; b++)
+        {
+            /// Prepare PORTB value: preserve bits 4-7, clear 0-2
+            uint8_t out = PORTB & 0b11111000;
+
+            /// Set R1 if upper bit is set
+            if (ur & 0x80)
+                out |= (1 << 0); // PORTB[0] = PB0 (D8)
+
+            /// Set R2 if lower bit is set
+            if (lr & 0x80)
+                out |= (1 << 1); // PORTB[1] = PB1 (D9)
+
+            /// Write data to PORTB
+            PORTB = out;
+
+            /// Clock pulse: HIGH then LOW
+            PORTB |= (1 << 2);  // Clock HIGH (PORTB[2] = PB2 = D10)
+            PORTB &= ~(1 << 2); // Clock LOW
+
+            /// Shift to next bit
+            ur <<= 1;
+            lr <<= 1;
+        }
+    }
+
+    /// Ensure clock is LOW after shifting
+    PORTB &= ~(1 << 2);
+
+    /// ===== SET ROW ADDRESS on PORTC (A, B, C, D) =====
+    /// PORTC mapping:
+    ///   [0] = A0 (Address A)
+    ///   [1] = A1 (Address B)
+    ///   [2] = A2 (Address C)
+    ///   [3] = A3 (Address D)
+
+    uint8_t pc = PORTC & 0xF0; // Preserve bits 4-7
+    pc |= (row & 0x0F);        // Set address bits 0-3
+    PORTC = pc;
+
+    /// Brief settle time for address lines
+    asm volatile("nop\nnop\nnop\nnop");
+
+    /// ===== LATCH PULSE (LAT = PORTB[3]) =====
+    PORTB |= (1 << 3);  // LAT HIGH
+    PORTB &= ~(1 << 3); // LAT LOW
+
+    /// ===== RESTORE OE PWM BRIGHTNESS =====
+    OCR2B = savedOCR2B;
+
+    /// ===== ADVANCE TO NEXT ROW =====
+    row++;
+    if (row >= config.panel_scan)
+        row = 0;
+}
+
+/**
+ * @brief Draw or clear a pixel in back buffer
+ * Adafruit_GFX override - coordinates are checked against bounds
+ */
+void HUB08_Panel::drawPixel(int16_t x, int16_t y, uint16_t c)
+{
+    if (!initialized)
+        return;
+    if (x < 0 || x >= width() || y < 0 || y >= height())
+        return;
+
+    uint16_t bytesPerRow = (config.panel_width * config.chain_length) / 8;
+    uint8_t *ptr = bufferBack + y * bytesPerRow + (x >> 3);
+
+    if (c)
+        *ptr |= (0x80 >> (x & 7)); // Set bit (pixel ON)
+    else
+        *ptr &= ~(0x80 >> (x & 7)); // Clear bit (pixel OFF)
+}
+
+/**
+ * @brief Fill entire back buffer with solid color
+ * Adafruit_GFX override
+ */
+void HUB08_Panel::fillScreen(uint16_t c)
+{
+    if (!initialized)
+        return;
+    memset(bufferBack, c ? 0xFF : 0x00, bufferSize);
+}
+
+/**
+ * @brief Clear back buffer to black (convenience function)
+ */
+void HUB08_Panel::clearScreen()
+{
+    if (!initialized)
+        return;
+    memset(bufferBack, 0x00, bufferSize);
+}
+
+/**
+ * @brief Atomically swap front and back buffers
+ * Front buffer (displayed) and back buffer (drawing) are swapped safely
+ * to prevent ISR from reading partial/incomplete frame data.
+ *
+ * @param copyFrontToBack If true, copies display buffer back to drawing buffer
+ *                        after swap to maintain frame consistency for next draw
+ */
+void HUB08_Panel::swapBuffers(bool copyFrontToBack)
+{
+    if (!initialized)
+        return;
+
+    /// Swap pointer atomically (disable interrupts to prevent ISR contention)
+    cli();
+    uint8_t *tmp = bufferFront;
+    bufferFront = bufferBack;
+    bufferBack = tmp;
+    sei();
+
+    /// Optional: synchronize both buffers for consistent multi-frame drawing
+    if (copyFrontToBack)
+    {
+        memcpy(bufferBack, bufferFront, bufferSize);
+    }
+}
+
+/**
+ * @brief Set display brightness via hardware PWM
+ * Controls Timer2 OCR2B register (OE pin duty cycle).
+ * Uses gamma-corrected dim_curve for perceptually linear brightness.
+ *
+ * @param b Brightness level (0-255):
+ *          0   = display off
+ *          128 = ~50% perceived brightness
+ *          255 = maximum brightness
+ */
+void HUB08_Panel::setBrightness(uint8_t b)
+{
+    brightness = b;
+    if (!initialized)
+        return;
+
+    /// Look up gamma-corrected PWM value from PROGMEM table
+    uint8_t dim = pgm_read_byte(&dim_curve[brightness]);
+
+    /// OE is active LOW: small OCR2B = short OFF time = bright output
+    OCR2B = 255 - dim;
+}
+
+/**
+ * @brief Get the pixel width of text in current font
+ */
+int16_t HUB08_Panel::getTextWidth(const String &text)
+{
+    int16_t x1, y1;
+    uint16_t w, h;
+
+    getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
+    return w;
+}
+
+/**
+ * @brief Get the pixel height of current font
+ */
+int16_t HUB08_Panel::getTextHeight()
+{
+    int16_t x1, y1;
+    uint16_t w, h;
+
+    getTextBounds("Ay", 0, 0, &x1, &y1, &w, &h);
+    return h;
+}
+
+/**
+ * @brief Draw multiline centered text with newline support
+ *
+ * @param text Text string with optional \\n for line breaks
+ * @details
+ *   - Clears back buffer
+ *   - Parses \\n characters to split lines
+ *   - Centers each line horizontally and vertically on display
+ *   - Swaps buffers to display
+ *   - Max 8 lines supported
+ */
+void HUB08_Panel::drawTextMultilineCentered(const String &text)
+{
+    clearScreen();
+
+    /// ---- 1) Split text by newline characters ----
+    const uint8_t MAX_LINES = 8;
+    String lines[MAX_LINES];
+    uint8_t lineCount = 0;
+
+    String current = "";
+    for (uint16_t i = 0; i <= text.length(); i++)
+    {
+        char c = text[i];
+
+        if (c == '\n' || c == '\0')
+        {
+            if (current.length() > 0)
+                lines[lineCount++] = current;
+            current = "";
+        }
+        else
+        {
+            current += c;
+        }
+    }
+
+    if (lineCount == 0)
+        return;
+
+    /// ---- 2) Calculate total height of all lines ----
+    int16_t lineHeight = getTextHeight();
+    if (lineHeight < 8)
+        lineHeight = 8; // Safety minimum
+
+    int16_t totalHeight = lineCount * lineHeight;
+
+    /// ---- 3) Find vertical center position ----
+    int16_t startY = (height() - totalHeight) / 2 + lineHeight;
+
+    /// ---- 4) Draw and center-align each line ----
+    for (uint8_t i = 0; i < lineCount; i++)
+    {
+        int16_t w = getTextWidth(lines[i]);
+        int16_t x = (width() - w) / 2;
+        int16_t y = startY + i * lineHeight;
+
+        setCursor(x, y);
+        print(lines[i]);
+    }
+
+    /// ---- 5) Swap buffers to display ----
+    swapBuffers(true);
+}

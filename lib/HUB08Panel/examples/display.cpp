@@ -51,7 +51,7 @@ void setup()
     /// Draw centered multiline text
     /// Text supports \n for line breaks
     /// Buffer operations are non-blocking (ISR handles refresh)
-    display.drawTextMultilineCentered("HOWIEE\nKIAW ^^");
+    display.drawTextMultilineCentered("MAJU\nLAGI...");
 
     /// Note: swapBuffers() is called automatically inside drawTextMultilineCentered()
     /// The display will now show the text smoothly without flickering

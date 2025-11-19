@@ -1,10 +1,43 @@
 # HUB08 LED Panel Library - Professional Documentation
 
-## Overview
+## ⚠️ IMPORTANT: Supported MCU Only
 
-HUB08_Panel is a high-performance Arduino library for controlling P4.75 64×32 LED matrix panels using the HUB08 protocol. This library implements hardware-accelerated scanning with Timer1 interrupt-driven refresh at 625 Hz, providing flicker-free, smooth text and graphics rendering.
+This library **ONLY** works on specific Arduino boards. It requires direct register access and specific timer hardware that not all boards have.
 
-### Key Features
+### ✅ **Fully Supported Boards**
+
+| Board                           | MCU        | Status | Notes                           |
+| ------------------------------- | ---------- | ------ | ------------------------------- |
+| **Arduino Uno**                 | ATmega328P | ✓      | 16MHz, 2KB RAM, full support    |
+| **Arduino Nano**                | ATmega328P | ✓      | Identical to Uno, fully support |
+| **Arduino Pro Mini (5V/16MHz)** | ATmega328P | ✓      | Same pinout as Uno/Nano         |
+| **Arduino Mega 2560**           | ATmega2560 | ✓      | 16MHz, 8KB RAM, full support    |
+
+### 🟨 **Not Supported (Incompatible)**
+
+| Board                   | MCU        | Reason                                             |
+| ----------------------- | ---------- | -------------------------------------------------- |
+| Leonardo / Micro        | ATmega32U4 | Different timer/port layout                        |
+| Arduino Due             | ATSAM3X8E  | ARM-based, no AVR registers                        |
+| STM32 (Blue Pill)       | STM32F103  | Different architecture, no direct register support |
+| ESP8266 / ESP32         | Tensilica  | WiFi MCU, no stable timer ISR                      |
+| Arduino MKR series      | SAMD21     | Different timer system                             |
+| Nano Every / Mega Every | ATmega4809 | Different port system (VPORT), new timer (TCA0)    |
+| ATtiny85 / ATtiny84     | ATtiny     | Too little RAM, no 16-bit Timer1                   |
+
+### 🔴 **Why These Aren't Supported**
+
+This library depends on:
+
+1. **Direct PORTA/B/C/D/E/F register access** - Required for 10-20× speed improvement
+2. **16-bit Timer1** - For ISR at 10kHz (CTC mode)
+3. **8-bit Timer2 or Timer3** - For PWM brightness control
+4. **Sufficient RAM** - Minimum 2KB for double buffers (64×32 × 2 bits = 512 bytes)
+5. **Predictable interrupt timing** - ISR must execute within 100µs
+
+Most modern boards (ARM-based, WiFi MCUs) don't have these exact requirements or have different architectures entirely.
+
+---
 
 - **625 Hz Refresh Rate**: Timer1-based ISR @ 10 kHz row scanning (16 rows × 625 Hz = flicker-free display)
 - **Direct Port Manipulation**: PORTB/PORTC/PORTD register access (10-20× faster than digitalWrite)
@@ -30,7 +63,7 @@ HUB08_Panel is a high-performance Arduino library for controlling P4.75 64×32 L
 
 ---
 
-## Wiring Guide (Arduino Uno)
+## Wiring Guide (Arduino Uno / Nano / Pro Mini)
 
 ### Pin Mapping Table
 
@@ -50,15 +83,17 @@ HUB08_Panel is a high-performance Arduino library for controlling P4.75 64×32 L
 
 ### Schematic Connection Diagram
 
+#### For Arduino Uno / Nano / Pro Mini (ATmega328P)
+
 ```
-Arduino Uno                          HUB08 Panel Connector
-─────────────────────────────────────────────────────────────
+Arduino Uno/Nano                 HUB08 Panel Connector
+──────────────────────────────────────────────────────
 
 D8  ─────────────────────────► R1   (Data upper half)
 D9  ─────────────────────────► R2   (Data lower half)
 D10 ─────────────────────────► CLK  (Shift clock)
 D11 ─────────────────────────► LAT  (Latch)
-D3  ─────────────────────────► OE   (Output enable, active LOW)
+D3  ─────────────────────────► OE   (Output enable, active LOW, Timer2 PWM)
 
 A0  ─────────────────────────► A    (Address bit 0)
 A1  ─────────────────────────► B    (Address bit 1)
@@ -69,9 +104,37 @@ GND ─────────────────────────�
 +5V ─────────────────────────► +5V  (Power supply)
 ```
 
+#### For Arduino Mega 2560 (ATmega2560)
+
+```
+Arduino Mega 2560                HUB08 Panel Connector
+──────────────────────────────────────────────────────
+
+D8  ─────────────────────────► R1   (Data upper half - PORTH5)
+D9  ─────────────────────────► R2   (Data lower half - PORTH6)
+D10 ─────────────────────────► CLK  (Shift clock - PORTB4)
+D11 ─────────────────────────► LAT  (Latch - PORTB5)
+D3  ─────────────────────────► OE   (Output enable, active LOW, Timer3 PWM - PORTE5)
+
+A0  ─────────────────────────► A    (Address bit 0 - PORTF0)
+A1  ─────────────────────────► B    (Address bit 1 - PORTF1)
+A2  ─────────────────────────► C    (Address bit 2 - PORTF2)
+A3  ─────────────────────────► D    (Address bit 3 - PORTF3)
+
+GND ─────────────────────────► GND  (Common ground)
++5V ─────────────────────────► +5V  (Power supply)
+
+NOTE: Mega uses different port mapping but SAME pin numbers (D8-11, D3, A0-A3)
+      Library auto-detects MCU and applies correct port registers.
+```
+
 ### Important Notes on Pin Selection
 
-1. **OE Pin (D3) is Critical**: The output enable pin **must** be connected to **D3** (OC2B) because the library uses Timer2 PWM for brightness control. Using any other pin will result in no display output.
+1. **OE Pin (D3) is Critical**: The output enable pin **must** be connected to **D3** because:
+
+   - **Arduino Uno/Nano**: Uses Timer2 OC2B (only PWM timer on D3)
+   - **Arduino Mega 2560**: Uses Timer3 OC3C (D3 = PORTE5)
+   - Using any other pin will result in no display output or constant brightness
 
 2. **Address Pins**: Analog pins (A0-A3) can be used as digital GPIO. The library automatically configures them as outputs.
 
@@ -317,10 +380,13 @@ display.setBrightness(255);  // Maximum brightness
 
 ### Timer Configuration
 
-| Timer      | Function            | Frequency | Interrupt                    |
-| ---------- | ------------------- | --------- | ---------------------------- |
-| **Timer1** | Row scanning (ISR)  | 10 kHz    | Every 100 µs, calls `scan()` |
-| **Timer2** | OE PWM (brightness) | 31 kHz    | Fast PWM on OC2B (D3)        |
+| Timer      | Function            | Frequency | Interrupt                    | Supported MCU       |
+| ---------- | ------------------- | --------- | ---------------------------- | ------------------- |
+| **Timer1** | Row scanning (ISR)  | 10 kHz    | Every 100 µs, calls `scan()` | UNO, Nano, Mega     |
+| **Timer2** | OE PWM (brightness) | 31 kHz    | Fast PWM on OC2B (D3)        | UNO, Nano, Pro Mini |
+| **Timer3** | OE PWM (brightness) | 31 kHz    | Fast PWM on OC3C (D3)        | Mega 2560 only      |
+
+**Note**: The library automatically selects the correct timer based on detected MCU using compile-time conditionals.
 
 ### Scan Timing
 

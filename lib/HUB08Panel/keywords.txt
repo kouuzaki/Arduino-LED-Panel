@@ -1,0 +1,105 @@
+########################################
+# HUB08Panel Library Keywords
+########################################
+
+########################################
+# Classes (KEYWORD1)
+########################################
+HUB08_Panel        KEYWORD1
+HUB08_Config       KEYWORD1
+
+########################################
+# Namespaces
+########################################
+HUB08Fonts         KEYWORD1
+
+########################################
+# Methods (KEYWORD2)
+########################################
+begin                   KEYWORD2
+clearScreen             KEYWORD2
+swapBuffers             KEYWORD2
+drawPixel               KEYWORD2
+fillScreen              KEYWORD2
+drawTextMultilineCentered   KEYWORD2
+getTextWidth            KEYWORD2
+getTextHeight           KEYWORD2
+setBrightness           KEYWORD2
+
+# Inherited from Adafruit_GFX (optional but useful)
+setFont                 KEYWORD2
+setCursor               KEYWORD2
+print                   KEYWORD2
+
+########################################
+# Font Identifiers (KEYWORD3)
+########################################
+Roboto_6                KEYWORD3
+Roboto_Bold_12          KEYWORD3
+Roboto_Bold_13          KEYWORD3
+Roboto_Bold_14          KEYWORD3
+Roboto_Bold_15          KEYWORD3
+
+########################################
+# MCU/PORT Macros (KEYWORD3)
+########################################
+HUB_R1_PORT             KEYWORD3
+HUB_R1_DDR              KEYWORD3
+HUB_R1_BIT              KEYWORD3
+HUB_R2_PORT             KEYWORD3
+HUB_R2_DDR              KEYWORD3
+HUB_R2_BIT              KEYWORD3
+
+HUB_CLK_PORT            KEYWORD3
+HUB_CLK_DDR             KEYWORD3
+HUB_CLK_BIT             KEYWORD3
+
+HUB_LAT_PORT            KEYWORD3
+HUB_LAT_DDR             KEYWORD3
+HUB_LAT_BIT             KEYWORD3
+
+HUB_OE_PORT             KEYWORD3
+HUB_OE_DDR              KEYWORD3
+HUB_OE_BIT              KEYWORD3
+
+HUB_ADDR_PORT           KEYWORD3
+HUB_ADDR_DDR            KEYWORD3
+
+########################################
+# Timer Registers (KEYWORD3)
+########################################
+TCCR1A      KEYWORD3
+TCCR1B      KEYWORD3
+TCCR2A      KEYWORD3
+TCCR2B      KEYWORD3
+TCCR3A      KEYWORD3
+TCCR3B      KEYWORD3
+OCR1A       KEYWORD3
+OCR2B       KEYWORD3
+OCR3C       KEYWORD3
+TIMSK1      KEYWORD3
+TCNT1       KEYWORD3
+
+########################################
+# Arduino Port Registers (KEYWORD3)
+########################################
+PORTB   KEYWORD3
+PORTC   KEYWORD3
+PORTD   KEYWORD3
+PORTE   KEYWORD3
+PORTF   KEYWORD3
+PORTH   KEYWORD3
+
+DDRB    KEYWORD3
+DDRC    KEYWORD3
+DDRD    KEYWORD3
+DDRE    KEYWORD3
+DDRF    KEYWORD3
+DDRH    KEYWORD3
+
+########################################
+# Literals (LITERAL1)
+########################################
+0       LITERAL1
+1       LITERAL1
+255     LITERAL1

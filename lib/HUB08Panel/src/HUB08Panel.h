@@ -10,24 +10,44 @@
  * @brief High-performance driver for HUB08 LED matrix panels (P4.75 64×32)
  * @details Implements ISR-based scanning with Timer1 @ 10kHz for 625 Hz refresh rate.
  *          Uses double buffering and hardware PWM for smooth, flicker-free display.
- *          Auto-detects and supports both Arduino Uno (ATmega328P) and Mega 2560 (ATmega2560)
+ *          Auto-detects MCU and applies correct port/timer mapping.
+ *
+ * @warning **SUPPORTED MCU ONLY:**
+ *          - Arduino Uno (ATmega328P) ✓
+ *          - Arduino Nano (ATmega328P) ✓
+ *          - Arduino Pro Mini 5V/16MHz (ATmega328P) ✓
+ *          - Arduino Mega 2560 (ATmega2560) ✓
+ *
+ *          Other boards (Leonardo, ESP32, ATtiny, etc.) are NOT supported.
+ *          This library requires:
+ *          1. Direct PORTA/B/C/D/E/F register access
+ *          2. 16-bit Timer1 (for ISR @ 10kHz)
+ *          3. 8-bit Timer2 or Timer3 (for PWM brightness)
+ *          4. Sufficient RAM (≥2KB for buffers)
+ *
+ * @see README.md for MCU compatibility table and supported boards list
  */
 
-/// ========== MCU-Specific Port Mapping ==========
-/// Pins are the same (D8, D9, D10, D11, D3, A0-A3) but map to different PORTs
-#if defined(__AVR_ATmega2560__)
-// Mega 2560 pin to PORT mapping:
-// D8  → PORTH5 (R1)
-// D9  → PORTH6 (R2)
-// D10 → PORTB4 (CLK)
-// D11 → PORTB5 (LAT)
-// D3  → PORTE5 (OE - Timer3C PWM, not Timer2!)
-// A0  → PORTF0 (ADDR_A)
-// A1  → PORTF1 (ADDR_B)
-// A2  → PORTF2 (ADDR_C)
-// A3  → PORTF3 (ADDR_D)
+/// ========== MCU Auto-Detection & Port Mapping ==========
+/// This library ONLY supports specific Arduino boards with compatible hardware.
+/// See README.md for full compatibility table.
 
-// Data lines split across PORTH and PORTB
+#if defined(__AVR_ATmega2560__)
+// ========== Arduino Mega 2560 (ATmega2560) ==========
+// Pin to PORT mapping (verified against ATmega2560 datasheet):
+// D8  → PORTH5 (R1)       - Data upper half
+// D9  → PORTH6 (R2)       - Data lower half
+// D10 → PORTB4 (CLK)      - Shift clock
+// D11 → PORTB5 (LAT)      - Latch signal
+// D3  → PORTE5 (OE)       - Output enable (Timer3 OC3C PWM)
+// A0  → PORTF0 (ADDR_A)   - Row address bit 0
+// A1  → PORTF1 (ADDR_B)   - Row address bit 1
+// A2  → PORTF2 (ADDR_C)   - Row address bit 2
+// A3  → PORTF3 (ADDR_D)   - Row address bit 3
+//
+// CRITICAL: OE uses Timer3 (OC3C), NOT Timer2
+// This is a hardware constraint of the Mega 2560 pinout
+
 #define HUB_R1_PORT PORTH
 #define HUB_R1_DDR DDRH
 #define HUB_R1_BIT 5
@@ -51,17 +71,25 @@
 #define HUB_ADDR_PORT PORTF
 #define HUB_ADDR_DDR DDRF
 
+#define MCU_NAME "Arduino Mega 2560 (ATmega2560)"
+
 #elif defined(__AVR_ATmega328P__)
-// Arduino Uno pin to PORT mapping:
-// D8  → PORTB0 (R1)
-// D9  → PORTB1 (R2)
-// D10 → PORTB2 (CLK)
-// D11 → PORTB3 (LAT)
-// D3  → PORTD3 (OE - Timer2 OC2B PWM)
-// A0  → PORTC0 (ADDR_A)
-// A1  → PORTC1 (ADDR_B)
-// A2  → PORTC2 (ADDR_C)
-// A3  → PORTC3 (ADDR_D)
+// ========== Arduino Uno / Nano / Pro Mini (ATmega328P) ==========
+// All these boards use ATmega328P with identical pinout:
+// - Arduino Uno
+// - Arduino Nano
+// - Arduino Pro Mini (5V, 16MHz)
+//
+// Pin to PORT mapping (verified against ATmega328P datasheet):
+// D8  → PORTB0 (R1)       - Data upper half
+// D9  → PORTB1 (R2)       - Data lower half
+// D10 → PORTB2 (CLK)      - Shift clock
+// D11 → PORTB3 (LAT)      - Latch signal
+// D3  → PORTD3 (OE)       - Output enable (Timer2 OC2B PWM)
+// A0  → PORTC0 (ADDR_A)   - Row address bit 0
+// A1  → PORTC1 (ADDR_B)   - Row address bit 1
+// A2  → PORTC2 (ADDR_C)   - Row address bit 2
+// A3  → PORTC3 (ADDR_D)   - Row address bit 3
 
 #define HUB_R1_PORT PORTB
 #define HUB_R1_DDR DDRB
@@ -86,11 +114,20 @@
 #define HUB_ADDR_PORT PORTC
 #define HUB_ADDR_DDR DDRC
 
-#else
-#error "Unsupported AVR MCU - only ATmega328P (Uno) and ATmega2560 (Mega) are supported"
-#endif
+#define MCU_NAME "Arduino Uno / Nano / Pro Mini (ATmega328P)"
 
-// Perceptual brightness curve (gamma correction) for linear brightness sensation
+#else
+#error "╔════════════════════════════════════════════════════════════╗"
+#error "║ UNSUPPORTED MCU                                            ║"
+#error "║ HUB08Panel library only supports:                          ║"
+#error "║   ✓ Arduino Uno (ATmega328P)                               ║"
+#error "║   ✓ Arduino Nano (ATmega328P)                              ║"
+#error "║   ✓ Arduino Pro Mini 5V/16MHz (ATmega328P)                 ║"
+#error "║   ✓ Arduino Mega 2560 (ATmega2560)                         ║"
+#error "║                                                            ║"
+#error "║ Your board is incompatible. See README.md for details.     ║"
+#error "╚════════════════════════════════════════════════════════════╝"
+#endif // Perceptual brightness curve (gamma correction) for linear brightness sensation
 // Values are stored in PROGMEM to save RAM
 const uint8_t dim_curve[] PROGMEM =
     {

@@ -591,7 +591,10 @@ void HUB08_Panel::scan()
         lowerHead = frameBuffer + (row + config.panel_scan) * (totalWidth / 8);
     }
 
-    // Shift out data with DUAL data pins (R1 for upper, R2 for lower)
+    // 1. Turn OFF display (OE HIGH) to prevent ghosting
+    digitalWrite(stored_enable, HIGH);
+
+    // 2. Shift out data with DUAL data pins (R1 for upper, R2 for lower)
     for (uint8_t byte = 0; byte < (totalWidth / 8); byte++)
     {
         uint8_t upperPixels = *upperHead++;
@@ -613,12 +616,7 @@ void HUB08_Panel::scan()
         }
     }
 
-    // CRITICAL: Wait for OE to go HIGH before changing rows
-    uint16_t timeout = 2000;
-    while (digitalRead(stored_enable) == LOW && --timeout > 0)
-        ;
-
-    // Set address pins for row selection
+    // 3. Set address pins for row selection
     digitalWrite(stored_addr_a, (row & 0x01) ? HIGH : LOW);
     if (addressBits >= 2)
         digitalWrite(stored_addr_b, (row & 0x02) ? HIGH : LOW);
@@ -627,11 +625,15 @@ void HUB08_Panel::scan()
     if (addressBits >= 4)
         digitalWrite(stored_addr_d, (row & 0x08) ? HIGH : LOW);
 
-    // CRITICAL: Double toggle latch
+    // 4. Latch Data
     digitalWrite(stored_latch, HIGH);
     digitalWrite(stored_latch, LOW);
-    digitalWrite(stored_latch, HIGH);
-    digitalWrite(stored_latch, LOW);
+
+    // 5. Turn ON display (OE LOW)
+    // Manual strobe for guaranteed visibility
+    digitalWrite(stored_enable, LOW);
+    delayMicroseconds(100); // Adjust this for brightness/flicker balance
+    digitalWrite(stored_enable, HIGH);
 
     // Next row (wraps from 15 back to 0)
     row = (row + 1) & (config.panel_scan - 1);
@@ -693,17 +695,9 @@ void HUB08_Panel::clearScreen()
 void HUB08_Panel::setBrightness(uint8_t brt)
 {
     brightness = brt;
-
-// Setup 32kHz PWM on pin 3 (Timer 3 on Mega) untuk flicker-free
-// Reference: HUB08SPI.cpp line: TCCR2B = TCCR2B & 0b11111000 | 0x01;
-#ifdef ARDUINO_AVR_MEGA2560
-    TCCR3B = (TCCR3B & 0b11111000) | 0x01; // 32kHz PWM on pin 3
-#endif
-
-    // Gunakan dim_curve untuk brightness control
-    uint8_t pwmValue = 255 - pgm_read_byte(&dim_curve[brt]);
-    // Apply brightness langsung dengan PWM
-    analogWrite(stored_enable, pwmValue);
+    // Manual strobe in scan() handles brightness now.
+    // We disable PWM here to avoid conflict.
+    // analogWrite(stored_enable, 255); // OFF
 }
 
 // HUB08SPI compatibility methods

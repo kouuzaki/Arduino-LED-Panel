@@ -26,7 +26,7 @@
 
 #define PANEL_WIDTH 64  // Single panel width
 #define PANEL_HEIGHT 32 // Single panel height
-#define PANEL_CHAIN 1   // Number of panels chained
+#define PANEL_CHAIN 2   // Number of panels chained
 #define PANEL_SCAN 16   // 1/16 scan rate
 
 HUB08_Panel ledPanel(PANEL_WIDTH, PANEL_HEIGHT, PANEL_CHAIN);
@@ -54,14 +54,12 @@ void setup()
 
     Serial.println("Starting scanning...");
     // Start scanning first
-    // Lower refresh rate to avoid ISR starvation (digitalWrite is slow)
-    ledPanel.startScanning(30);
+    // Optimized port manipulation allows higher refresh rates
+    // ledPanel.startScanning(100);
     Serial.println("Scanning started.");
-    delay(100);
-
-    // Set brightness
+    delay(100); // Set brightness
     Serial.println("Setting brightness...");
-    ledPanel.setBrightness(200);
+    ledPanel.setBrightness(50);
     delay(50);
 
     Serial.println("Starting pattern tests...");
@@ -97,7 +95,7 @@ void setup()
     ledPanel.setCursor(2, 20);
     ledPanel.print("Hello");
 
-    Serial.println("✓ Tests complete!");
+    Serial.println("Tests complete!");
     delay(3000);
 
     ledPanel.fillScreen(0);

@@ -239,6 +239,7 @@ void setup() {
 ```
 
 **Available Adafruit fonts** (from Adafruit_GFX library):
+
 - `FreeMono9pt7b`, `FreeMonoBold9pt7b`, `FreeMonoOblique9pt7b`, etc.
 - `FreeSans9pt7b`, `FreeSansBold9pt7b`, `FreeSansOblique9pt7b`, etc.
 - `FreeSerif9pt7b`, `FreeSerifBold9pt7b`, `FreeSerifItalic9pt7b`, etc.

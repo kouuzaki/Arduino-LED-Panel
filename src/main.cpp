@@ -120,7 +120,9 @@ void setup()
 
     Serial.println("✓ System ready!");
     Serial.println("  - Send text via MQTT: device/iot_led_panel/command/text");
-    Serial.println("  - API Info: http://192.168.1.200:8080/api/device/info");
+    Serial.print("  - API Info: http://");
+    Serial.print(Ethernet.localIP());
+    Serial.println(":8080/api/device/info");
 }
 
 void loop()

@@ -4,21 +4,23 @@
 #include <DeviceSystemInfo.h>
 #include <PubSubClient.h>
 #include <HUB08Panel.h>
+#include <Fonts/FreeSans9pt7b.h>
 #include "handlers/api_handler.h"
 #include "handlers/mqtt_handler.h"
+#include "handlers/mqtt_text_handler.h"
 
 // ============================================
 // LED Panel Configuration
 // ============================================
-#define DATA_PIN_R1 2
-#define DATA_PIN_R2 3
-#define CLOCK_PIN 4
-#define LATCH_PIN 5
-#define ENABLE_PIN 6
-#define ADDR_A 7
-#define ADDR_B 8
-#define ADDR_C 9
-#define ADDR_D 10
+#define DATA_PIN_R1 22
+#define DATA_PIN_R2 23
+#define CLOCK_PIN 24
+#define LATCH_PIN 25
+#define ENABLE_PIN 26
+#define ADDR_A 27
+#define ADDR_B 28
+#define ADDR_C 29
+#define ADDR_D 30
 
 #define PANEL_WIDTH 64
 #define PANEL_HEIGHT 32
@@ -50,10 +52,17 @@ PubSubClient mqttClient(ethClient);
 
 ApiHandler apiHandler;
 MqttHandler mqttHandler(mqttClient, device_name);
+MqttTextHandler textHandler(mqttClient, ledPanel, device_name);
 
 // Status monitoring
 unsigned long lastStatusCheck = 0;
 const unsigned long STATUS_INTERVAL = 5000; // 5 seconds
+
+// MQTT callback untuk handle incoming messages
+void mqttCallback(char *topic, byte *payload, unsigned int length)
+{
+  textHandler.handleMessage(topic, payload, length);
+}
 
 void setup()
 {
@@ -70,6 +79,12 @@ void setup()
     ledPanel.startScanning(100);
     ledPanel.clearScreen();
     ledPanel.setBrightness(200);
+    
+    // Set Adafruit font untuk text rendering
+    ledPanel.setAdafruitFont(&FreeSans9pt7b);
+    ledPanel.setTextColor(1); // White/On
+    ledPanel.setCursor(0, 16);
+    ledPanel.print("Ready");
   }
 
   // Initialize Ethernet
@@ -82,7 +97,8 @@ void setup()
   apiHandler.begin();
   Serial.println("API:8080");
 
-  // Initialize MQTT
+  // Initialize MQTT with callback
+  mqttClient.setCallback(mqttCallback);
   mqttHandler.connect(mqtt_server, mqtt_port, mqtt_username, mqtt_password);
   Serial.println("MQTT:Setup");
 }

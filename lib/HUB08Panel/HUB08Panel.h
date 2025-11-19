@@ -4,9 +4,38 @@
 #include <Arduino.h>
 #include <Adafruit_GFX.h>
 
-// Timer support untuk Arduino Uno
+// ============================================
+// PIN CONFIGURATION DOCUMENTATION
+// ============================================
+// ATmega2560 / Arduino Mega Pin Mapping:
+// 
+// Data Pins (Dual pins for upper/lower half):
+//   - DATA_PIN_R1: D22 (Upper half - rows 0-15)
+//   - DATA_PIN_R2: D23 (Lower half - rows 16-31)
+//
+// Control Pins:
+//   - CLOCK_PIN:  D24 (Shift clock)
+//   - LATCH_PIN:  D25 (Latch enable / LAT)
+//   - ENABLE_PIN: D26 (Output enable / OE - active LOW)
+//
+// Address Pins (1/16 scan = 4 address lines):
+//   - ADDR_A: D27 (Address line A - LSB)
+//   - ADDR_B: D28 (Address line B)
+//   - ADDR_C: D29 (Address line C)
+//   - ADDR_D: D30 (Address line D - MSB)
+//
+// Panel Configuration:
+//   - Resolution: 64x32 pixels per panel
+//   - Chain: 2 panels (128x32 total)
+//   - Scan: 1/16 multiplexing
+//
+// ============================================
+
+// Timer support untuk Arduino Uno & Mega
 #ifdef ARDUINO_AVR_UNO
-  // Untuk Arduino Uno, gunakan Timer1 untuk interrupt
+  #define USE_TIMER1 1
+#endif
+#ifdef ARDUINO_AVR_MEGA2560
   #define USE_TIMER1 1
 #endif
 

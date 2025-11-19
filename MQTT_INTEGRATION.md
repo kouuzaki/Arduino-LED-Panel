@@ -4,19 +4,20 @@
 
 ### Pin Mapping untuk HUB08 Panel
 
-| Function | Pin | Port | Description |
-|----------|-----|------|-------------|
-| **Data R1** | 22 | D22 | Upper half data (rows 0-15) |
-| **Data R2** | 23 | D23 | Lower half data (rows 16-31) |
-| **Clock** | 24 | D24 | Shift register clock |
-| **Latch** | 25 | D25 | Latch enable (LAT) |
-| **Enable** | 26 | D26 | Output enable (OE) - active LOW |
-| **Addr A** | 27 | D27 | Address line A (LSB) |
-| **Addr B** | 28 | D28 | Address line B |
-| **Addr C** | 29 | D29 | Address line C |
-| **Addr D** | 30 | D30 | Address line D (MSB) |
+| Function    | Pin | Port | Description                     |
+| ----------- | --- | ---- | ------------------------------- |
+| **Data R1** | 22  | D22  | Upper half data (rows 0-15)     |
+| **Data R2** | 23  | D23  | Lower half data (rows 16-31)    |
+| **Clock**   | 24  | D24  | Shift register clock            |
+| **Latch**   | 25  | D25  | Latch enable (LAT)              |
+| **Enable**  | 26  | D26  | Output enable (OE) - active LOW |
+| **Addr A**  | 27  | D27  | Address line A (LSB)            |
+| **Addr B**  | 28  | D28  | Address line B                  |
+| **Addr C**  | 29  | D29  | Address line C                  |
+| **Addr D**  | 30  | D30  | Address line D (MSB)            |
 
 ### Panel Specifications
+
 - **Resolution**: 64×32 pixels per panel
 - **Chain**: 2 panels = 128×32 total display
 - **Scan Type**: 1/16 multiplexing
@@ -29,9 +30,11 @@
 ### Command Topics (Device subscribes)
 
 #### 1. Text Rendering
+
 **Topic**: `device/iot_led_panel/command/text`
 
 **Payload**:
+
 ```json
 {
   "text": "Hello World",
@@ -42,12 +45,14 @@
 ```
 
 **Parameters**:
+
 - `text` (string): Text to display (max 127 chars)
 - `x` (int): X coordinate (0-127)
 - `y` (int): Y coordinate (0-31)
 - `color` (int): 0 = off, 1 = on
 
 **Example**:
+
 ```bash
 mosquitto_pub -h 192.168.1.1 -p 1884 -u edgeadmin -P edge123 \
   -t "device/iot_led_panel/command/text" \
@@ -57,11 +62,13 @@ mosquitto_pub -h 192.168.1.1 -p 1884 -u edgeadmin -P edge123 \
 ---
 
 #### 2. Clear Display
+
 **Topic**: `device/iot_led_panel/command/clear`
 
 **Payload**: Any value (payload is ignored)
 
 **Example**:
+
 ```bash
 mosquitto_pub -h 192.168.1.1 -p 1884 -u edgeadmin -P edge123 \
   -t "device/iot_led_panel/command/clear" \
@@ -71,9 +78,11 @@ mosquitto_pub -h 192.168.1.1 -p 1884 -u edgeadmin -P edge123 \
 ---
 
 #### 3. Brightness Control
+
 **Topic**: `device/iot_led_panel/command/brightness`
 
 **Payload**:
+
 ```json
 {
   "brightness": 200
@@ -81,9 +90,11 @@ mosquitto_pub -h 192.168.1.1 -p 1884 -u edgeadmin -P edge123 \
 ```
 
 **Parameters**:
+
 - `brightness` (int): 0-255 (0 = off, 255 = max)
 
 **Example**:
+
 ```bash
 mosquitto_pub -h 192.168.1.1 -p 1884 -u edgeadmin -P edge123 \
   -t "device/iot_led_panel/command/brightness" \
@@ -95,9 +106,11 @@ mosquitto_pub -h 192.168.1.1 -p 1884 -u edgeadmin -P edge123 \
 ### Status Topics (Device publishes)
 
 #### 1. Display Status
+
 **Topic**: `device/iot_led_panel/status/display`
 
 **Payload**:
+
 ```json
 {
   "text": "Hello World",
@@ -112,9 +125,11 @@ mosquitto_pub -h 192.168.1.1 -p 1884 -u edgeadmin -P edge123 \
 ---
 
 #### 2. Device Info
+
 **Topic**: `device/iot_led_panel/info`
 
 **Payload**:
+
 ```json
 {
   "device_id": "iot_led_panel",
@@ -129,6 +144,7 @@ mosquitto_pub -h 192.168.1.1 -p 1884 -u edgeadmin -P edge123 \
 ---
 
 #### 3. Status (Online/Offline)
+
 **Topic**: `device/iot_led_panel/status` (retained)
 
 **Payload**: `"online"` or `"offline"`
@@ -139,26 +155,28 @@ mosquitto_pub -h 192.168.1.1 -p 1884 -u edgeadmin -P edge123 \
 
 ## Network Configuration
 
-| Setting | Value |
-|---------|-------|
-| **MQTT Broker** | 192.168.1.1 |
-| **MQTT Port** | 1884 |
-| **Username** | edgeadmin |
-| **Password** | edge123 |
-| **Device IP** | 192.168.1.60 |
-| **API Port** | 8080 |
+| Setting         | Value        |
+| --------------- | ------------ |
+| **MQTT Broker** | 192.168.1.1  |
+| **MQTT Port**   | 1884         |
+| **Username**    | edgeadmin    |
+| **Password**    | edge123      |
+| **Device IP**   | 192.168.1.60 |
+| **API Port**    | 8080         |
 
 ---
 
 ## Testing
 
 ### 1. Subscribe to Status (in another terminal)
+
 ```bash
 mosquitto_sub -h 192.168.1.1 -p 1884 -u edgeadmin -P edge123 \
   -t "device/iot_led_panel/status/display"
 ```
 
 ### 2. Send Text Command
+
 ```bash
 mosquitto_pub -h 192.168.1.1 -p 1884 -u edgeadmin -P edge123 \
   -t "device/iot_led_panel/command/text" \
@@ -166,6 +184,7 @@ mosquitto_pub -h 192.168.1.1 -p 1884 -u edgeadmin -P edge123 \
 ```
 
 ### 3. Clear Display
+
 ```bash
 mosquitto_pub -h 192.168.1.1 -p 1884 -u edgeadmin -P edge123 \
   -t "device/iot_led_panel/command/clear" \
@@ -173,6 +192,7 @@ mosquitto_pub -h 192.168.1.1 -p 1884 -u edgeadmin -P edge123 \
 ```
 
 ### 4. Adjust Brightness
+
 ```bash
 mosquitto_pub -h 192.168.1.1 -p 1884 -u edgeadmin -P edge123 \
   -t "device/iot_led_panel/command/brightness" \
@@ -184,6 +204,7 @@ mosquitto_pub -h 192.168.1.1 -p 1884 -u edgeadmin -P edge123 \
 ## Serial Monitor Output
 
 When connected, you'll see:
+
 ```
 Start
 Panel OK
@@ -204,6 +225,7 @@ MQTT: Brightness set to 100
 ### GET /api/device/info
 
 Returns full device information including:
+
 - Device ID
 - IP Address
 - Uptime
@@ -212,6 +234,7 @@ Returns full device information including:
 - Service status
 
 **Example**:
+
 ```bash
 curl http://192.168.1.60:8080/api/device/info | jq .
 ```
@@ -223,6 +246,7 @@ curl http://192.168.1.60:8080/api/device/info | jq .
 The device uses **FreeSans9pt7b** Adafruit font by default. To change:
 
 Edit `src/main.cpp`:
+
 ```cpp
 // Change this line in setup():
 ledPanel.setAdafruitFont(&FreeSans9pt7b);
@@ -236,16 +260,19 @@ ledPanel.setAdafruitFont(&FreeSans9pt7b);
 ## Troubleshooting
 
 ### Device not responding to MQTT commands
+
 1. Check MQTT connection: Monitor serial output for "MQTT:OK"
 2. Verify broker connectivity: `ping 192.168.1.1`
 3. Check topic subscription: Use `mosquitto_sub` to verify topics
 
 ### Text not appearing on panel
+
 1. Verify panel is powered and scanning
 2. Check brightness > 0 (default: 200)
 3. Ensure x, y coordinates are within display bounds (0-127 x, 0-31 y)
 
 ### Brightness not changing
+
 1. Verify `brightness` command format is valid JSON
 2. Check value is 0-255 range
 3. Monitor serial output for "Brightness set to X"
@@ -258,8 +285,8 @@ ledPanel.setAdafruitFont(&FreeSans9pt7b);
 - **ATmega2560 Flash**: 12.7% (32246 bytes / 253952 bytes)
 
 With 87.3% Flash headroom, you can add more features:
+
 - Additional text rendering effects
 - Animation support
 - Custom API endpoints
 - Extended MQTT commands
-

@@ -116,7 +116,7 @@ void setup() {
 
     // Set brightness (0-255)
     display.setBrightness(255);
-    
+
     // Select font using type-safe namespace
     display.setFont(HUB08Fonts::Roboto_Bold_15);
     display.setTextSize(1);
@@ -142,12 +142,12 @@ void loop() {
 
 The library includes 5 professional Roboto fonts stored in PROGMEM. Access them through the type-safe `HUB08Fonts` namespace for clean, IDE auto-complete friendly syntax:
 
-| Font                        | Size | Usage                                           |
-| --------------------------- | ---- | ----------------------------------------------- |
-| `HUB08Fonts::Roboto_6`      | 6pt  | Tiny text, compact display mode                 |
-| `HUB08Fonts::Roboto_Bold_12` | 12pt | Small-medium text, good readability             |
-| `HUB08Fonts::Roboto_Bold_13` | 13pt | Medium text, balanced appearance                |
-| `HUB08Fonts::Roboto_Bold_14` | 14pt | Medium-large text, emphasis                     |
+| Font                         | Size | Usage                                             |
+| ---------------------------- | ---- | ------------------------------------------------- |
+| `HUB08Fonts::Roboto_6`       | 6pt  | Tiny text, compact display mode                   |
+| `HUB08Fonts::Roboto_Bold_12` | 12pt | Small-medium text, good readability               |
+| `HUB08Fonts::Roboto_Bold_13` | 13pt | Medium text, balanced appearance                  |
+| `HUB08Fonts::Roboto_Bold_14` | 14pt | Medium-large text, emphasis                       |
 | `HUB08Fonts::Roboto_Bold_15` | 15pt | Large text, professional appearance (recommended) |
 
 ### Using Fonts
@@ -160,12 +160,12 @@ HUB08_Panel display(64, 32, 1);
 
 void setup() {
     display.begin(R1, R2, CLK, LAT, OE, A, B, C, D, 64, 32, 1, 16);
-    
+
     // Select font using namespace (with IDE auto-complete)
     display.setFont(HUB08Fonts::Roboto_Bold_15);
     display.setTextSize(1);
     display.setTextColor(1);
-    
+
     // Draw text
     display.setCursor(0, 15);
     display.print("Hello!");
@@ -176,6 +176,7 @@ void setup() {
 ### Font Characteristics
 
 All fonts are:
+
 - **Proportional**: Variable width per character for natural spacing
 - **PROGMEM stored**: Saves RAM (entire font ~2-5 KB each in flash)
 - **Adafruit_GFX format**: Compatible with standard Adafruit drawing commands
@@ -383,7 +384,7 @@ void setup() {
     }
 
     display.setBrightness(brightness);
-    
+
     // Use type-safe font namespace (with IDE auto-complete)
     display.setFont(HUB08Fonts::Roboto_Bold_15);
     display.setTextSize(1);

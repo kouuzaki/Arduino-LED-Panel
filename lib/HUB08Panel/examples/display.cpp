@@ -1,5 +1,5 @@
 /**
- * @file main.cpp
+ * @file display.cpp
  * @brief Main application for HUB08 LED panel demo
  *
  * This example demonstrates:

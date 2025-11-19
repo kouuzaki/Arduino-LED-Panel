@@ -12,8 +12,8 @@ private:
     PubSubClient &client;
     unsigned long lastHeartbeat;
     unsigned long lastReconnectAttempt;
-    const unsigned long HEARTBEAT_INTERVAL = 30000;    // 30 seconds
-    const unsigned long RECONNECT_INTERVAL = 10000;    // 10 seconds
+    const unsigned long HEARTBEAT_INTERVAL = 30000; // 30 seconds
+    const unsigned long RECONNECT_INTERVAL = 10000; // 10 seconds
 
     char cmdTopic[48];
     char infoTopic[48];
@@ -29,11 +29,7 @@ public:
         snprintf(statusTopic, sizeof(statusTopic), "device/%s/status", device_name);
     }
 
-    void connect(const char *server, uint16_t port, const char *username, const char *password)
-    {
-        client.setServer(server, port);
-        lastReconnectAttempt = 0;
-    }
+    bool connect(IPAddress host, uint16_t port, const char *user, const char *pass);
 
     void update()
     {
@@ -99,7 +95,7 @@ private:
         // Use compact JSON for MQTT heartbeat - optimized
         char buffer[128];
         buildMqttCompactJson(buffer, sizeof(buffer));
-        
+
         client.publish(infoTopic, buffer);
     }
 };

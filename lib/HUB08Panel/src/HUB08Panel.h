@@ -10,7 +10,85 @@
  * @brief High-performance driver for HUB08 LED matrix panels (P4.75 64×32)
  * @details Implements ISR-based scanning with Timer1 @ 10kHz for 625 Hz refresh rate.
  *          Uses double buffering and hardware PWM for smooth, flicker-free display.
+ *          Auto-detects and supports both Arduino Uno (ATmega328P) and Mega 2560 (ATmega2560)
  */
+
+/// ========== MCU-Specific Port Mapping ==========
+/// Pins are the same (D8, D9, D10, D11, D3, A0-A3) but map to different PORTs
+#if defined(__AVR_ATmega2560__)
+// Mega 2560 pin to PORT mapping:
+// D8  → PORTH5 (R1)
+// D9  → PORTH6 (R2)
+// D10 → PORTB4 (CLK)
+// D11 → PORTB5 (LAT)
+// D3  → PORTE5 (OE - Timer3C PWM, not Timer2!)
+// A0  → PORTF0 (ADDR_A)
+// A1  → PORTF1 (ADDR_B)
+// A2  → PORTF2 (ADDR_C)
+// A3  → PORTF3 (ADDR_D)
+
+// Data lines split across PORTH and PORTB
+#define HUB_R1_PORT PORTH
+#define HUB_R1_DDR DDRH
+#define HUB_R1_BIT 5
+
+#define HUB_R2_PORT PORTH
+#define HUB_R2_DDR DDRH
+#define HUB_R2_BIT 6
+
+#define HUB_CLK_PORT PORTB
+#define HUB_CLK_DDR DDRB
+#define HUB_CLK_BIT 4
+
+#define HUB_LAT_PORT PORTB
+#define HUB_LAT_DDR DDRB
+#define HUB_LAT_BIT 5
+
+#define HUB_OE_PORT PORTE
+#define HUB_OE_DDR DDRE
+#define HUB_OE_BIT 5
+
+#define HUB_ADDR_PORT PORTF
+#define HUB_ADDR_DDR DDRF
+
+#elif defined(__AVR_ATmega328P__)
+// Arduino Uno pin to PORT mapping:
+// D8  → PORTB0 (R1)
+// D9  → PORTB1 (R2)
+// D10 → PORTB2 (CLK)
+// D11 → PORTB3 (LAT)
+// D3  → PORTD3 (OE - Timer2 OC2B PWM)
+// A0  → PORTC0 (ADDR_A)
+// A1  → PORTC1 (ADDR_B)
+// A2  → PORTC2 (ADDR_C)
+// A3  → PORTC3 (ADDR_D)
+
+#define HUB_R1_PORT PORTB
+#define HUB_R1_DDR DDRB
+#define HUB_R1_BIT 0
+
+#define HUB_R2_PORT PORTB
+#define HUB_R2_DDR DDRB
+#define HUB_R2_BIT 1
+
+#define HUB_CLK_PORT PORTB
+#define HUB_CLK_DDR DDRB
+#define HUB_CLK_BIT 2
+
+#define HUB_LAT_PORT PORTB
+#define HUB_LAT_DDR DDRB
+#define HUB_LAT_BIT 3
+
+#define HUB_OE_PORT PORTD
+#define HUB_OE_DDR DDRD
+#define HUB_OE_BIT 3
+
+#define HUB_ADDR_PORT PORTC
+#define HUB_ADDR_DDR DDRC
+
+#else
+#error "Unsupported AVR MCU - only ATmega328P (Uno) and ATmega2560 (Mega) are supported"
+#endif
 
 // Perceptual brightness curve (gamma correction) for linear brightness sensation
 // Values are stored in PROGMEM to save RAM

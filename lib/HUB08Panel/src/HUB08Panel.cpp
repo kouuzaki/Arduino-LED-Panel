@@ -57,24 +57,37 @@ bool HUB08_Panel::begin(const HUB08_Config &cfg)
     pinMode(cfg.data_pin_r2, OUTPUT); // D9  → PORTB[1]
     pinMode(cfg.clock_pin, OUTPUT);   // D10 → PORTB[2]
     pinMode(cfg.latch_pin, OUTPUT);   // D11 → PORTB[3]
-    pinMode(cfg.enable_pin, OUTPUT);  // D3  → PORTD[3] (OC2B/Timer2)
+    pinMode(cfg.enable_pin, OUTPUT);  // D3
 
-    pinMode(cfg.addr_a, OUTPUT); // A0 → PORTC[0]
-    pinMode(cfg.addr_b, OUTPUT); // A1 → PORTC[1]
-    pinMode(cfg.addr_c, OUTPUT); // A2 → PORTC[2]
-    pinMode(cfg.addr_d, OUTPUT); // A3 → PORTC[3]
+    pinMode(cfg.addr_a, OUTPUT); // A0
+    pinMode(cfg.addr_b, OUTPUT); // A1
+    pinMode(cfg.addr_c, OUTPUT); // A2
+    pinMode(cfg.addr_d, OUTPUT); // A3
 
-    /// ========== Setup Timer2 for PWM brightness control on OE pin (D3) ==========
-    /// Use analogWrite() to configure Timer2 in Fast PWM mode
-    analogWrite(cfg.enable_pin, 128);
+    /// ========== Setup PWM for brightness control on OE pin ==========
+    /// Timer selection is MCU-dependent:
+    /// - UNO (ATmega328P): D3 = OC2B (Timer2)
+    /// - MEGA (ATmega2560): D3 = OC3C (Timer3)
 
-    /// Change Timer2 prescaler to 1 for ~31 kHz PWM frequency (finer resolution)
-    TCCR2B = (TCCR2B & 0b11111000) | 0x01;
+#if defined(__AVR_ATmega2560__)
+    // MEGA 2560 - OE = D3 = OC3C (Timer3)
+    // Fast PWM mode, TOP = 0xFF, prescaler = 1 (~31 kHz)
+    TCCR3A = (1 << COM3C1) | (1 << WGM30);
+    TCCR3B = (1 << WGM32) | (1 << CS30);
 
-    /// Set initial brightness using gamma curve
     uint8_t dim = pgm_read_byte(&dim_curve[brightness]);
-    /// OE is active LOW: small PWM value = bright output
+    OCR3C = 255 - dim;
+
+#elif defined(__AVR_ATmega328P__)
+    // UNO - OE = D3 = OC2B (Timer2)
+    // Fast PWM mode using analogWrite
+    analogWrite(cfg.enable_pin, 128);
+    TCCR2B = (TCCR2B & 0b11111000) | 0x01; // prescaler = 1
+
+    uint8_t dim = pgm_read_byte(&dim_curve[brightness]);
     OCR2B = 255 - dim;
+
+#endif
 
     initialized = true;
 
@@ -167,12 +180,79 @@ void HUB08_Panel::scan()
         lower = bufferFront + (row + config.panel_scan) * bytesPerRow;
 
     /// ===== Disable OE during data shifting to prevent ghosting =====
+#if defined(__AVR_ATmega2560__)
+    uint8_t savedOCR3C = OCR3C;
+    OCR3C = 255; // OE HIGH = output disabled
+#else
     uint8_t savedOCR2B = OCR2B;
     OCR2B = 255; // OE HIGH = output disabled
+#endif
 
-    /// ===== SHIFT DATA via PORTB (R1/R2 pins + clock) =====
-    /// Direct port manipulation is ~10-20× faster than digitalWrite
-    /// PORTB bit mapping:
+#if defined(__AVR_ATmega2560__)
+    /// ===== MEGA 2560: R1/R2 split across PORTH[5-6] and CLK/LAT on PORTB[4-5] =====
+    /// PORTH mapping:
+    ///   [5] = D8  (R1 data)
+    ///   [6] = D9  (R2 data)
+    /// PORTB mapping:
+    ///   [4] = D10 (CLK)
+    ///   [5] = D11 (LAT)
+
+    for (uint8_t i = 0; i < bytesPerRow; i++)
+    {
+        uint8_t ur = upper[i];                // Upper half byte
+        uint8_t lr = lower ? lower[i] : 0x00; // Lower half byte (or 0 if not used)
+
+        /// Shift 8 bits per byte, MSB first (0x80 = 10000000)
+        for (uint8_t b = 0; b < 8; b++)
+        {
+            /// Prepare PORTH value: preserve bits 0-4 and 7, set only 5-6
+            uint8_t porth = PORTH & 0b10011111;
+
+            /// Set R1 (PH5) if upper bit is set
+            if (ur & 0x80)
+                porth |= (1 << 5);
+
+            /// Set R2 (PH6) if lower bit is set
+            if (lr & 0x80)
+                porth |= (1 << 6);
+
+            /// Write data to PORTH
+            PORTH = porth;
+
+            /// Clock pulse: HIGH then LOW (PORTB[4] = PB4 = D10)
+            PORTB |= (1 << 4);  // Clock HIGH
+            PORTB &= ~(1 << 4); // Clock LOW
+
+            /// Shift to next bit
+            ur <<= 1;
+            lr <<= 1;
+        }
+    }
+
+    /// Ensure clock is LOW after shifting
+    PORTB &= ~(1 << 4);
+
+    /// ===== SET ROW ADDRESS on PORTF (A, B, C, D) =====
+    /// PORTF mapping:
+    ///   [0] = A0 (Address A)
+    ///   [1] = A1 (Address B)
+    ///   [2] = A2 (Address C)
+    ///   [3] = A3 (Address D)
+
+    uint8_t pf = PORTF & 0xF0; // Preserve bits 4-7
+    pf |= (row & 0x0F);        // Set address bits 0-3
+    PORTF = pf;
+
+    /// Brief settle time for address lines
+    asm volatile("nop\nnop\nnop\nnop");
+
+    /// ===== LATCH PULSE (LAT = PORTB[5]) =====
+    PORTB |= (1 << 5);  // LAT HIGH
+    PORTB &= ~(1 << 5); // LAT LOW
+
+#else
+    /// ===== UNO (ATmega328P): All control pins on PORTB[0-3] =====
+    /// PORTB mapping:
     ///   [0] = D8  (R1 data)
     ///   [1] = D9  (R2 data)
     ///   [2] = D10 (CLK)
@@ -231,8 +311,14 @@ void HUB08_Panel::scan()
     PORTB |= (1 << 3);  // LAT HIGH
     PORTB &= ~(1 << 3); // LAT LOW
 
+#endif
+
     /// ===== RESTORE OE PWM BRIGHTNESS =====
+#if defined(__AVR_ATmega2560__)
+    OCR3C = savedOCR3C;
+#else
     OCR2B = savedOCR2B;
+#endif
 
     /// ===== ADVANCE TO NEXT ROW =====
     row++;
@@ -310,7 +396,9 @@ void HUB08_Panel::swapBuffers(bool copyFrontToBack)
 
 /**
  * @brief Set display brightness via hardware PWM
- * Controls Timer2 OCR2B register (OE pin duty cycle).
+ * Controls brightness using appropriate timer for the MCU:
+ * - UNO: Timer2 OCR2B register (OE pin duty cycle)
+ * - MEGA: Timer3 OCR3C register (OE pin duty cycle)
  * Uses gamma-corrected dim_curve for perceptually linear brightness.
  *
  * @param b Brightness level (0-255):
@@ -327,8 +415,12 @@ void HUB08_Panel::setBrightness(uint8_t b)
     /// Look up gamma-corrected PWM value from PROGMEM table
     uint8_t dim = pgm_read_byte(&dim_curve[brightness]);
 
-    /// OE is active LOW: small OCR2B = short OFF time = bright output
-    OCR2B = 255 - dim;
+    /// OE is active LOW: small OCR value = short OFF time = bright output
+#if defined(__AVR_ATmega2560__)
+    OCR3C = 255 - dim; // MEGA Timer3 OC3C
+#else
+    OCR2B = 255 - dim; // UNO Timer2 OC2B
+#endif
 }
 
 /**

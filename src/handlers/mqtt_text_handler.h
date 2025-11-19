@@ -79,7 +79,7 @@ public:
         snprintf(statusBuffer, sizeof(statusBuffer),
                  "{\"text\":\"%s\",\"x\":%d,\"y\":%d,\"brightness\":%d}",
                  lastText, lastX, lastY, lastBrightness);
-        
+
         client.publish(statusTopic, statusBuffer);
     }
 
@@ -91,7 +91,7 @@ private:
         char buffer[256];
         if (length >= sizeof(buffer) - 1)
             length = sizeof(buffer) - 1;
-        
+
         memcpy(buffer, payload, length);
         buffer[length] = '\0';
 
@@ -128,10 +128,11 @@ private:
         }
 
         // Render text on panel
-        panel.fillScreen(0); // Clear
+        panel.fillScreen(0);   // Clear to black
         panel.setTextColor(1); // White/On
         panel.setCursor(lastX, lastY);
-        panel.print(lastText);
+        panel.drawTextMultilineCentered(lastText);
+        panel.swapBuffers(true); // Display with buffer copy
 
         // Publish status
         publishStatus();
@@ -144,8 +145,9 @@ private:
     void handleClearCommand()
     {
         panel.fillScreen(0);
+        panel.swapBuffers(true); // Display the clear
         memset(lastText, 0, sizeof(lastText));
-        
+
         publishStatus();
         Serial.println("MQTT: Display cleared");
     }
@@ -166,7 +168,7 @@ private:
             return;
 
         uint8_t brightness = atoi(brightnessStart + 13); // Skip '"brightness":'
-        
+
         if (brightness > 255)
             brightness = 255;
 

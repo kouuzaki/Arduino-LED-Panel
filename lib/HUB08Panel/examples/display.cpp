@@ -51,7 +51,7 @@ void setup()
     /// Draw centered multiline text
     /// Text supports \n for line breaks
     /// Buffer operations are non-blocking (ISR handles refresh)
-    display.drawTextMultilineCentered("MAJU\nLAGI...");
+    display.drawTextMultilineCentered("HOWIEE\nKIAW ^^");
 
     /// Note: swapBuffers() is called automatically inside drawTextMultilineCentered()
     /// The display will now show the text smoothly without flickering
@@ -61,33 +61,5 @@ void setup()
 
 void loop()
 {
-    /// Timer1 ISR @ 10 kHz handles all row scanning automatically
-    /// The main loop is free for other tasks
-
-    /// Optional: Read serial commands for brightness adjustment
-    if (Serial.available())
-    {
-        char cmd = Serial.read();
-
-        if (cmd == '+')
-        {
-            /// Increase brightness
-            static uint8_t brightness = 255;
-            brightness = min(255, brightness + 10);
-            display.setBrightness(brightness);
-            Serial.print("Brightness: ");
-            Serial.println(brightness);
-        }
-        else if (cmd == '-')
-        {
-            /// Decrease brightness
-            static uint8_t brightness = 255;
-            brightness = max(0, brightness - 10);
-            display.setBrightness(brightness);
-            Serial.print("Brightness: ");
-            Serial.println(brightness);
-        }
-    }
-
-    delay(10); // Small delay to prevent serial spam
+    // NOTHING TO DO HERE - DISPLAY HANDLED BY ISR
 }

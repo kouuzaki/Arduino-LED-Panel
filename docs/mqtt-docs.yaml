@@ -1,0 +1,152 @@
+asyncapi: '2.6.0'
+info:
+  title: IoT HUB08 LED Panel API
+  version: '1.2.0'
+  description: |
+    MQTT Protocol specification for the Arduino Mega HUB08 LED Panel Controller.
+    
+    This device uses a **Single Command Topic** strategy. The specific operation 
+    (Text, Clear, or Brightness) is determined by the `action` field in the JSON payload.
+
+servers:
+  local-broker:
+    url: mqtt://192.168.1.1:1884
+    protocol: mqtt
+    description: Local MQTT Broker
+
+channels:
+  # ----------------------------------------------------------------
+  # COMMAND CHANNEL (Client -> Device)
+  # ----------------------------------------------------------------
+  device/{deviceId}/cmd/display:
+    parameters:
+      deviceId:
+        description: Unique Device ID
+        schema:
+          type: string
+          default: iot_led_panel
+    publish:
+      summary: Send Display Commands
+      description: |
+        Send commands to control the LED matrix. 
+        The payload must include an `action` field to specify the command type.
+      message:
+        oneOf:
+          - $ref: '#/components/messages/CommandText'
+          - $ref: '#/components/messages/CommandClear'
+          - $ref: '#/components/messages/CommandBrightness'
+
+  # ----------------------------------------------------------------
+  # TELEMETRY CHANNEL (Device -> Client)
+  # ----------------------------------------------------------------
+  device/{deviceId}/info:
+    parameters:
+      deviceId:
+        $ref: '#/components/parameters/deviceId'
+    subscribe:
+      summary: System Heartbeat
+      description: Sent every 30 seconds containing system health data.
+      message:
+        $ref: '#/components/messages/HeartbeatPayload'
+
+  # ----------------------------------------------------------------
+  # STATUS CHANNEL (Device -> Client)
+  # ----------------------------------------------------------------
+  device/{deviceId}/status:
+    parameters:
+      deviceId:
+        $ref: '#/components/parameters/deviceId'
+    subscribe:
+      summary: Connection Status (LWT)
+      description: Indicates if the device is currently connected to the broker.
+      message:
+        payload:
+          type: string
+          enum: ['online', 'offline']
+          example: 'online'
+
+components:
+  parameters:
+    deviceId:
+      description: The unique identifier configured in the firmware.
+      schema:
+        type: string
+        default: iot_led_panel
+
+  messages:
+    # --- Message: Text Command ---
+    CommandText:
+      name: textCommand
+      title: Render Text
+      summary: Displays multiline text at specific coordinates.
+      contentType: application/json
+      payload:
+        type: object
+        required: [action, text]
+        properties:
+          action:
+            type: string
+            const: text
+            description: Discriminator value. Must be "text".
+          text:
+            type: string
+            description: The string to display. Use '\n' for new lines.
+            example: "HELLO\nWORLD"
+
+    # --- Message: Clear Command ---
+    CommandClear:
+      name: clearCommand
+      title: Clear Screen
+      summary: Clears the display buffer (Black screen).
+      contentType: application/json
+      payload:
+        type: object
+        required: [action]
+        properties:
+          action:
+            type: string
+            const: clear
+            description: Discriminator value. Must be "clear".
+
+    # --- Message: Brightness Command ---
+    CommandBrightness:
+      name: brightnessCommand
+      title: Set Brightness
+      summary: Adjusts the LED panel brightness (PWM).
+      contentType: application/json
+      payload:
+        type: object
+        required: [action, value]
+        properties:
+          action:
+            type: string
+            const: brightness
+            description: Discriminator value. Must be "brightness".
+          value:
+            type: integer
+            minimum: 0
+            maximum: 255
+            description: Brightness level (0-255).
+            example: 150
+
+    # --- Message: Heartbeat Payload ---
+    HeartbeatPayload:
+      name: heartbeat
+      title: System Telemetry
+      contentType: application/json
+      payload:
+        type: object
+        properties:
+          device_id:
+            type: string
+            example: "iot_led_panel"
+          ip:
+            type: string
+            format: ipv4
+            example: "192.168.1.60"
+          uptime_ms:
+            type: integer
+            description: System uptime in milliseconds.
+          free_mem:
+            type: integer
+            description: Available RAM in bytes.

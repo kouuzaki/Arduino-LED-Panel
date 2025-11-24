@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <PubSubClient.h>
 #include <HUB08Panel.h>
+#include <ArduinoJson.h>
 
 class MqttDisplayHandler
 {
@@ -13,7 +14,7 @@ private:
     const char *device_name;
     char cmdTopic[64];
 
-    // State cache (Menyimpan status terakhir)
+    // State cache
     char lastText[128];
     uint8_t lastBrightness;
     int lastX, lastY;
@@ -21,13 +22,12 @@ private:
 public:
     MqttDisplayHandler(PubSubClient &mqttClient, HUB08_Panel &ledPanel, const char *name)
         : client(mqttClient), panel(ledPanel), device_name(name),
-          lastBrightness(150), lastX(0), lastY(8)
+          lastBrightness(128), lastX(0), lastY(8)
     {
         memset(lastText, 0, sizeof(lastText));
         snprintf(cmdTopic, sizeof(cmdTopic), "device/%s/cmd/display", device_name);
     }
 
-    // Dipanggil oleh MqttManager saat terkoneksi
     void subscribe()
     {
         if (client.connected())
@@ -38,87 +38,80 @@ public:
         }
     }
 
-    // Router pesan masuk
     void handleMessage(const char *topic, byte *payload, unsigned int length)
     {
-        // Pastikan topic benar
         if (strcmp(topic, cmdTopic) != 0)
             return;
 
-        // Konversi payload ke C-String
-        char json[256];
-        if (length >= sizeof(json))
-            length = sizeof(json) - 1;
-        memcpy(json, payload, length);
-        json[length] = '\0';
+        // 1. Siapkan Buffer (Mutable) untuk Zero-Copy Mode
+        // ArduinoJson v7 bisa memodifikasi buffer ini langsung tanpa alokasi RAM tambahan
+        char jsonBuffer[256];
+        if (length >= sizeof(jsonBuffer))
+            length = sizeof(jsonBuffer) - 1;
+        memcpy(jsonBuffer, payload, length);
+        jsonBuffer[length] = '\0';
 
-        // --- Parsing Action ---
-        // Kita gunakan strstr untuk cek keberadaan key action
-        if (strstr(json, "\"action\":\"text\""))
+        // 2. Buat Filter (Kunci Hemat Memori)
+        // Kita hanya mengambil field yang diperlukan, sisanya dibuang
+        JsonDocument filter;
+        filter["action"] = true;
+        filter["text"] = true;
+        filter["value"] = true;
+
+        // 3. Deserialize JSON
+        // JsonDocument di v7 otomatis mengatur memori secara efisien
+        JsonDocument doc;
+        DeserializationError error = deserializeJson(doc, jsonBuffer, DeserializationOption::Filter(filter));
+
+        if (error)
         {
-            processText(json);
+            Serial.print(F("JSON Error: "));
+            Serial.println(error.c_str());
+            return;
         }
-        else if (strstr(json, "\"action\":\"clear\""))
+
+        // 4. Ambil Action
+        const char *action = doc["action"];
+        if (!action)
+            return; // Tidak ada action, abaikan
+
+        // 5. Routing Logic
+        if (strcmp(action, "text") == 0)
+        {
+            processText(doc);
+        }
+        else if (strcmp(action, "clear") == 0)
         {
             processClear();
         }
-        else if (strstr(json, "\"action\":\"brightness\""))
+        else if (strcmp(action, "brightness") == 0)
         {
-            processBrightness(json);
-        }
-        else
-        {
-            Serial.println("DisplayHandler: Unknown Action");
+            processBrightness(doc);
         }
     }
 
 private:
-    // Payload: {"action":"text", "text":"HALO", "x":0, "y":8}
-    void processText(char *json)
+    // Payload: {"action":"text", "text":"HALO"}
+    void processText(JsonDocument &doc)
     {
-        // 1. Parse Text
-        char *ptr = strstr(json, "\"text\":\"");
-        if (ptr)
-        {
-            ptr += 8;                     // Geser pointer setelah "text":"
-            char *end = strchr(ptr, '"'); // Cari penutup kutip
-            if (end)
-            {
-                int len = end - ptr;
-                if (len >= (int)sizeof(lastText))
-                    len = sizeof(lastText) - 1;
+        // Ambil Text (default empty string jika null)
+        const char *newText = doc["text"] | "";
 
-                // Copy text ke buffer
-                memcpy(lastText, ptr, len);
-                lastText[len] = '\0';
+        // Simpan ke cache
+        strlcpy(lastText, newText, sizeof(lastText));
+        // Handle Newline Manual (Opsional)
+        // ArduinoJson otomatis handle \n standar, tapi jika user kirim raw string "\\n":
+        String s = String(lastText);
+        s.replace("\\n", "\n");
 
-                // Handle Newline: Ubah karakter '\\n' (2 char) menjadi '\n' (1 char)
-                // Kita gunakan String helper agar mudah replace-nya
-                String s = String(lastText);
-                s.replace("\\n", "\n");
-                strcpy(lastText, s.c_str());
-            }
-        }
-
-        // 2. Parse X (Optional)
-        ptr = strstr(json, "\"x\":");
-        if (ptr)
-            lastX = atoi(ptr + 4);
-
-        // 3. Parse Y (Optional)
-        ptr = strstr(json, "\"y\":");
-        if (ptr)
-            lastY = atoi(ptr + 4);
-
-        // 4. Render ke Panel
+        // Render
         panel.fillScreen(0);
-        panel.setCursor(lastX, lastY);
-        panel.drawTextMultilineCentered(lastText);
+        panel.setCursor(0, 8);
+        panel.drawTextMultilineCentered(s);
         panel.swapBuffers(true);
 
-        Serial.print("Display Update: [");
-        Serial.print(lastText);
-        Serial.println("]");
+        Serial.print(F("Display Text: "));
+        Serial.println(s);
     }
 
     // Payload: {"action":"clear"}
@@ -126,23 +119,18 @@ private:
     {
         panel.fillScreen(0);
         panel.swapBuffers(true);
-
-        // Reset cache text
-        memset(lastText, 0, sizeof(lastText));
-
-        Serial.println("Display Cleared");
+        memset(lastText, 0, sizeof(lastText)); // Clear cache text
+        Serial.println(F("Display Cleared"));
     }
 
     // Payload: {"action":"brightness", "value":100}
-    void processBrightness(char *json)
+    void processBrightness(JsonDocument &doc)
     {
-        char *ptr = strstr(json, "\"value\":");
-        if (ptr)
+        if (doc.containsKey("value"))
         {
-            // Ambil angka setelah "value":
-            int val = atoi(ptr + 8);
+            int val = doc["value"];
 
-            // Batasi nilai 0 - 255
+            // Constrain value 0-255
             if (val < 0)
                 val = 0;
             if (val > 255)
@@ -151,7 +139,7 @@ private:
             lastBrightness = (uint8_t)val;
             panel.setBrightness(lastBrightness);
 
-            Serial.print("Brightness Set: ");
+            Serial.print(F("Brightness: "));
             Serial.println(val);
         }
     }

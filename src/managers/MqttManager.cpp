@@ -3,11 +3,11 @@
 
 MqttManager::MqttManager(PubSubClient &mqttClient, const char *name)
     : client(mqttClient), device_name(name),
-      lastHeartbeat(0), lastReconnectAttempt(0), has_auth(false), onReconnectCb(nullptr)
+      lastHeartbeat(0), lastReconnectAttempt(0), has_auth(false), onReconnectCb(nullptr),
+      heartbeatInterval(DEFAULT_HEARTBEAT_INTERVAL)
 {
-    // Topic sistem: device/nama/info & device/nama/status
-    snprintf(infoTopic, sizeof(infoTopic), "device/%s/info", device_name);
-    snprintf(statusTopic, sizeof(statusTopic), "device/%s/status", device_name);
+    // Topic sistem: system/nama/info
+    snprintf(infoTopic, sizeof(infoTopic), "system/%s/info", device_name);
 }
 
 void MqttManager::begin(IPAddress host, uint16_t port, const char *user, const char *pass)
@@ -30,19 +30,34 @@ void MqttManager::begin(IPAddress host, uint16_t port, const char *user, const c
     {
         has_auth = false;
     }
+
+    // Log default heartbeat interval
+    Serial.print("MQTT: Heartbeat interval set to ");
+    Serial.print(heartbeatInterval);
+    Serial.println(" ms (default)");
 }
 
 void MqttManager::setDeviceId(const char *newId)
 {
     device_name = newId;
     // Re-generate topics
-    snprintf(infoTopic, sizeof(infoTopic), "device/%s/info", device_name);
-    snprintf(statusTopic, sizeof(statusTopic), "device/%s/status", device_name);
+    snprintf(infoTopic, sizeof(infoTopic), "system/%s/info", device_name);
 }
 
 void MqttManager::setReconnectCallback(ReconnectCallback cb)
 {
     onReconnectCb = cb;
+}
+
+void MqttManager::setHeartbeatInterval(unsigned long intervalMs)
+{
+    if (intervalMs > 0 && intervalMs <= 600000) // Max 10 minutes
+    {
+        heartbeatInterval = intervalMs;
+        Serial.print("MQTT: Heartbeat interval updated to ");
+        Serial.print(intervalMs);
+        Serial.println(" ms");
+    }
 }
 
 bool MqttManager::connect()
@@ -62,9 +77,6 @@ bool MqttManager::connect()
     if (ok)
     {
         Serial.println("OK");
-        // Publish status online (Retained)
-        client.publish(statusTopic, "online", true);
-
         // Kirim heartbeat pertama segera
         publishHeartbeat();
 
@@ -104,7 +116,7 @@ void MqttManager::update()
 
         // 3. Heartbeat Loop
         unsigned long now = millis();
-        if (now - lastHeartbeat > HEARTBEAT_INTERVAL)
+        if (now - lastHeartbeat > heartbeatInterval)
         {
             lastHeartbeat = now;
             publishHeartbeat();
@@ -114,11 +126,24 @@ void MqttManager::update()
 
 void MqttManager::publishHeartbeat()
 {
-    char buffer[200];
-    // Menggunakan fungsi central dari DeviceSystemInfo.h
-    SystemInfo::buildHeartbeatJSON(buffer, sizeof(buffer));
+    // Build full API response (same as REST API)
+    JsonDocument response;
+    SystemInfo::buildFullApiResponse(response);
 
-    client.publish(infoTopic, buffer);
+    // Serialize to string
+    char buffer[1024];
+    size_t len = serializeJson(response, buffer, sizeof(buffer));
+
+    bool ok = client.publish(infoTopic, buffer, 1); // QoS 1
+
+    // Log heartbeat with timestamp
+    Serial.print("MQTT: [");
+    Serial.print(millis());
+    Serial.print("ms] Heartbeat (");
+    Serial.print(len);
+    Serial.print(" bytes) -> ");
+    Serial.print(ok ? "OK" : "FAILED");
+    Serial.println();
 }
 
 bool MqttManager::isConnected() { return client.connected(); }
@@ -127,5 +152,5 @@ bool MqttManager::publish(const char *topic, const char *payload, bool retained)
 {
     if (!client.connected())
         return false;
-    return client.publish(topic, payload, retained);
+    return client.publish(topic, payload, retained, 1); // retained, QoS 1
 }

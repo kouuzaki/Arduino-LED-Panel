@@ -57,12 +57,11 @@ public:
         memcpy(jsonBuffer, payload, length);
         jsonBuffer[length] = '\0';
 
-        // 2. Buat Filter (Kunci Hemat Memori)
-        // Kita hanya mengambil field yang diperlukan, sisanya dibuang
+        // 4. Ambil Filter
         JsonDocument filter;
         filter["action"] = true;
         filter["text"] = true;
-        filter["value"] = true;
+        filter["brightness"] = true;
 
         // 3. Deserialize JSON
         // JsonDocument di v7 otomatis mengatur memori secara efisien
@@ -90,16 +89,29 @@ public:
         {
             processClear();
         }
-        else if (strcmp(action, "brightness") == 0)
-        {
-            processBrightness(doc);
-        }
     }
 
 private:
-    // Payload: {"action":"text", "text":"HALO"}
+    // Payload: {"action":"text", "text":"HALO\nWORLD", "brightness":200}
+    // brightness is optional, defaults to 255 if not specified
     void processText(JsonDocument &doc)
     {
+        // Handle brightness if provided
+        if (doc.containsKey("brightness"))
+        {
+            int val = doc["brightness"];
+            if (val < 0)
+                val = 0;
+            if (val > 255)
+                val = 255;
+
+            lastBrightness = (uint8_t)val;
+            panel.setBrightness(lastBrightness);
+
+            Serial.print(F("Brightness set to: "));
+            Serial.println(val);
+        }
+
         // Ambil Text (default empty string jika null)
         const char *newText = doc["text"] | "";
 
@@ -127,27 +139,6 @@ private:
         panel.swapBuffers(true);
         memset(lastText, 0, sizeof(lastText)); // Clear cache text
         Serial.println(F("Display Cleared"));
-    }
-
-    // Payload: {"action":"brightness", "value":100}
-    void processBrightness(JsonDocument &doc)
-    {
-        if (doc.containsKey("value"))
-        {
-            int val = doc["value"];
-
-            // Constrain value 0-255
-            if (val < 0)
-                val = 0;
-            if (val > 255)
-                val = 255;
-
-            lastBrightness = (uint8_t)val;
-            panel.setBrightness(lastBrightness);
-
-            Serial.print(F("Brightness: "));
-            Serial.println(val);
-        }
     }
 };
 

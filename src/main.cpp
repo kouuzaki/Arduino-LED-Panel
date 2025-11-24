@@ -167,6 +167,13 @@ void setup()
                 String s = doc["dns_primary"].as<String>();
                 dns.fromString(s);
             }
+
+            // MQTT Heartbeat Interval (optional, default 10s)
+            if (doc.containsKey("mqtt_heartbeat_interval"))
+            {
+                unsigned long interval = doc["mqtt_heartbeat_interval"];
+                mqttManager.setHeartbeatInterval(interval);
+            }
         }
         else
         {

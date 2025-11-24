@@ -55,22 +55,6 @@ namespace SystemInfo
         return String(ip[0]) + "." + String(ip[1]) + "." + String(ip[2]) + "." + String(ip[3]);
     }
 
-    // 1. JSON Compact (Untuk MQTT Heartbeat) - Hemat Data
-    inline void buildHeartbeatJSON(char *buffer, size_t bufferSize)
-    {
-        IPAddress ip = Ethernet.localIP();
-        int freeRam = getFreeMemory();
-        unsigned long uptime = millis();
-
-        char devId[32];
-        getStoredDeviceId(devId, sizeof(devId));
-
-        snprintf(buffer, bufferSize,
-                 "{\"device_id\":\"%s\",\"ip\":\"%d.%d.%d.%d\",\"uptime_ms\":%lu,\"free_mem\":%d}",
-                 devId, ip[0], ip[1], ip[2], ip[3], uptime, freeRam);
-    }
-
-    // 2. JSON Full (Untuk REST API) - Detail Lengkap
     // Builds device info data object
     // Note: On Mega 2560, be careful with stack usage.
     inline void buildDeviceInfoData(JsonObject &dataObj)

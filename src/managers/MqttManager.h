@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <PubSubClient.h>
 #include <Ethernet.h>
+#include <ArduinoJson.h>
 
 // Tipe data untuk callback function pointer
 typedef void (*ReconnectCallback)();
@@ -23,12 +24,12 @@ private:
     // Timers
     unsigned long lastHeartbeat;
     unsigned long lastReconnectAttempt;
-    const unsigned long HEARTBEAT_INTERVAL = 30000; // 30 Detik
-    const unsigned long RECONNECT_INTERVAL = 5000;  // 5 Detik
+    unsigned long heartbeatInterval;                        // Configurable heartbeat interval in ms
+    const unsigned long RECONNECT_INTERVAL = 5000;          // 5 Detik
+    const unsigned long DEFAULT_HEARTBEAT_INTERVAL = 10000; // 10 Seconds default
 
     // Topics
     char infoTopic[64];
-    char statusTopic[64];
 
     // Callback saat reconnect berhasil (untuk resubscribe)
     ReconnectCallback onReconnectCb;
@@ -47,6 +48,9 @@ public:
 
     // Set callback agar main program tahu kapan harus resubscribe topic
     void setReconnectCallback(ReconnectCallback cb);
+
+    // Set heartbeat interval dynamically (in milliseconds)
+    void setHeartbeatInterval(unsigned long intervalMs);
 
     bool isConnected();
     bool publish(const char *topic, const char *payload, bool retained = false);

@@ -79,10 +79,41 @@ namespace SystemInfo
         snprintf(uptimeStr, sizeof(uptimeStr), "0000-00-00 %02lu:%02lu:%02lu", hours, minutes, secs);
         dataObj["uptime"] = uptimeStr;
 
-        // Free Memory in KB
-        char memStr[16];
-        snprintf(memStr, sizeof(memStr), "%d KB", getFreeMemory() / 1024);
+        // Memory usage (bytes + human readable)
+        int freeBytes = getFreeMemory();
+
+        // Total RAM depends on MCU
+#if defined(__AVR_ATmega2560__)
+        const int totalRam = 8192; // 8 KB on Mega2560
+#elif defined(__AVR_ATmega328P__)
+        const int totalRam = 2048; // 2 KB on Uno/Nano
+#else
+        const int totalRam = 0; // Unknown MCU
+#endif
+
+        int usedBytes = (totalRam > 0) ? (totalRam - freeBytes) : 0;
+        int usedPercent = (totalRam > 0) ? (usedBytes * 100 / totalRam) : 0;
+
+        // Preserve existing 'free_memory' human-readable field for backward compatibility
+        char memStr[32];
+        snprintf(memStr, sizeof(memStr), "%d KB free", (freeBytes >= 1024) ? (freeBytes / 1024) : 0);
         dataObj["free_memory"] = memStr;
+
+        // Add a grouped "memory" object with numeric fields (safer math to avoid overflow on 16-bit int)
+        JsonObject mem = dataObj["memory"].to<JsonObject>();
+        mem["total_bytes"] = totalRam;
+        mem["free_bytes"] = freeBytes;
+        mem["used_bytes"] = usedBytes;
+
+        // Use 32-bit arithmetic to prevent overflow on AVR where 'int' is 16-bit
+        int usedPercentFixed = (totalRam > 0) ? (int)((long)usedBytes * 100L / (long)totalRam) : 0;
+        mem["used_percent"] = usedPercentFixed;
+
+        // Add human readable used string and duplicate summary free string inside memory object
+        char usedStr[32];
+        snprintf(usedStr, sizeof(usedStr), "%d KB used (%d%%)", (usedBytes >= 1024) ? (usedBytes / 1024) : 0, usedPercentFixed);
+        mem["used"] = usedStr;
+        mem["free"] = memStr;
 
         // Network information
         JsonObject network = dataObj["network"].to<JsonObject>();

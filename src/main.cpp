@@ -19,17 +19,7 @@
 #include "handlers/api_handler.h"
 #include "storage/FileStorage.h"
 
-// --- Hardware Pin Mapping (Mega 2560 PORT A) ---
-#define R1 22  // PA0
-#define R2 23  // PA1
-#define CLK 24 // PA2
-#define LAT 25 // PA3
-#define OE 3   // PE5 (Timer 3 PWM)
-
-#define A A0 // PF0
-#define B A1 // PF1
-#define C A2 // PF2
-#define D A3 // PF3
+// Pin defines moved into library mapping; main.cpp uses explicit pin numbers
 
 // SPI Safety Pins
 #define ETH_CS_PIN 10
@@ -141,7 +131,9 @@ void setup()
 
     // 3. Init Display
     Serial.print("Init Display... ");
-    if (display.begin(R1, R2, CLK, LAT, OE, A, B, C, D, 64, 32, 2, 16))
+    // Use explicit pin numbers here (no defines in main.cpp)
+    // Data R1..LAT: D5, D6, D7, D8; OE: D3; Address pins: A0..A3
+    if (display.begin(5, 6, 7, 8, 3, A0, A1, A2, A3, 64, 32, 2, 16))
     {
         Serial.println("OK");
         display.setBrightness(255);

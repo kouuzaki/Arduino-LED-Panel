@@ -33,79 +33,69 @@
 /// See README.md for full compatibility table.
 
 #if defined(__AVR_ATmega2560__)
-// ========== Arduino Mega 2560 (ATmega2560) - MODIFIED FOR ETHERNET SAFETY ==========
-// Kita pindahkan semua ke PORTA (Pin 22-29) agar JAUH dari Pin 10 (Ethernet CS)
-// Pin Mapping Baru:
-// D22 -> PORTA0 (R1)
-// D23 -> PORTA1 (R2)
-// D24 -> PORTA2 (CLK)
-// D25 -> PORTA3 (LAT)
-// D3  -> PORTE5 (OE) (Tetap di Pin 3 karena Timer3 PWM ada di sini)
-// A0-A3 -> PORTF0-3 (Address)
+// ========== Arduino Mega 2560 - USER MAPPING: D5..D8 ==========
+// User requested mapping for Mega using digital pins 5..8.
+// On Mega2560:
+//   D5 -> PORTE bit 3  (PE3)  - R1
+//   D6 -> PORTH bit 3  (PH3)  - R2
+//   D7 -> PORTH bit 4  (PH4)  - CLK
+//   D8 -> PORTH bit 5  (PH5)  - LAT
 
-#define HUB_R1_PORT PORTA
-#define HUB_R1_DDR DDRA
-#define HUB_R1_BIT 0 // Pin 22
+#define HUB_R1_PORT PORTE
+#define HUB_R1_DDR DDRE
+#define HUB_R1_BIT 3 // PE3 (D5)
 
-#define HUB_R2_PORT PORTA
-#define HUB_R2_DDR DDRA
-#define HUB_R2_BIT 1 // Pin 23
+#define HUB_R2_PORT PORTH
+#define HUB_R2_DDR DDRH
+#define HUB_R2_BIT 3 // PH3 (D6)
 
-#define HUB_CLK_PORT PORTA
-#define HUB_CLK_DDR DDRA
-#define HUB_CLK_BIT 2 // Pin 24
+#define HUB_CLK_PORT PORTH
+#define HUB_CLK_DDR DDRH
+#define HUB_CLK_BIT 4 // PH4 (D7)
 
-#define HUB_LAT_PORT PORTA
-#define HUB_LAT_DDR DDRA
-#define HUB_LAT_BIT 3 // Pin 25
+#define HUB_LAT_PORT PORTH
+#define HUB_LAT_DDR DDRH
+#define HUB_LAT_BIT 5 // PH5 (D8)
 
-// OE Tetap di Pin 3 (Timer 3 OC3C)
+// OE / PWM output: D3 -> PORTE bit 5 (OC3C / Timer3 on Mega)
 #define HUB_OE_PORT PORTE
 #define HUB_OE_DDR DDRE
-#define HUB_OE_BIT 5
+#define HUB_OE_BIT 5 // PE5 (D3)
 
+// Address lines remain PORTF (A0-A3)
 #define HUB_ADDR_PORT PORTF
 #define HUB_ADDR_DDR DDRF
 
-#define MCU_NAME "Arduino Mega 2560 (Custom Port A)"
+#define MCU_NAME "Arduino Mega 2560 (D5..D8 mapping)"
 
 #elif defined(__AVR_ATmega328P__)
 // ========== Arduino Uno / Nano / Pro Mini (ATmega328P) ==========
-// All these boards use ATmega328P with identical pinout:
-// - Arduino Uno
-// - Arduino Nano
-// - Arduino Pro Mini (5V, 16MHz)
-//
-// Pin to PORT mapping (verified against ATmega328P datasheet):
-// D8  → PORTB0 (R1)       - Data upper half
-// D9  → PORTB1 (R2)       - Data lower half
-// D10 → PORTB2 (CLK)      - Shift clock
-// D11 → PORTB3 (LAT)      - Latch signal
-// D3  → PORTD3 (OE)       - Output enable (Timer2 OC2B PWM)
-// A0  → PORTC0 (ADDR_A)   - Row address bit 0
-// A1  → PORTC1 (ADDR_B)   - Row address bit 1
-// A2  → PORTC2 (ADDR_C)   - Row address bit 2
-// A3  → PORTC3 (ADDR_D)   - Row address bit 3
+// Map pins 5..8 to data/clock/latch for Uno-family as requested:
+//   D5 -> PD5  - R1
+//   D6 -> PD6  - R2
+//   D7 -> PD7  - CLK
+//   D8 -> PB0  - LAT
+// OE remains D3 (PD3) for Timer2 PWM, address lines on PORTC (A0-A3)
 
-#define HUB_R1_PORT PORTB
-#define HUB_R1_DDR DDRB
-#define HUB_R1_BIT 0
+#define HUB_R1_PORT PORTD
+#define HUB_R1_DDR DDRD
+#define HUB_R1_BIT 5 // PD5 (D5)
 
-#define HUB_R2_PORT PORTB
-#define HUB_R2_DDR DDRB
-#define HUB_R2_BIT 1
+#define HUB_R2_PORT PORTD
+#define HUB_R2_DDR DDRD
+#define HUB_R2_BIT 6 // PD6 (D6)
 
-#define HUB_CLK_PORT PORTB
-#define HUB_CLK_DDR DDRB
-#define HUB_CLK_BIT 2
+#define HUB_CLK_PORT PORTD
+#define HUB_CLK_DDR DDRD
+#define HUB_CLK_BIT 7 // PD7 (D7)
 
 #define HUB_LAT_PORT PORTB
 #define HUB_LAT_DDR DDRB
-#define HUB_LAT_BIT 3
+#define HUB_LAT_BIT 0 // PB0 (D8)
 
 #define HUB_OE_PORT PORTD
 #define HUB_OE_DDR DDRD
-#define HUB_OE_BIT 3
+#define HUB_OE_BIT 3 // PD3 (D3)
 
 #define HUB_ADDR_PORT PORTC
 #define HUB_ADDR_DDR DDRC
@@ -187,19 +177,18 @@ public:
 private:
   HUB08_Config config;
 
-  uint8_t *bufferFront; ///< Front buffer (read by ISR during scan)
-  uint8_t *bufferBack;  ///< Back buffer (written by Adafruit_GFX drawing functions)
+  uint8_t *bufferFront; ///< Front buffer (displayed by ISR)
+  uint8_t *bufferBack;  ///< Back buffer (drawing buffer)
   uint16_t bufferSize;  ///< Size of each buffer in bytes
 
-  uint8_t brightness; ///< Current brightness level (0-255)
-  bool initialized;   ///< Initialization flag
+  volatile bool initialized; ///< Initialization flag (ISR-aware)
+  uint8_t brightness;        ///< Current brightness 0-255
 
 public:
   /**
    * @brief Constructor for HUB08_Panel display
    * @param width Panel width in pixels (default 64)
    * @param height Panel height in pixels (default 32)
-   * @param chain Number of panels chained horizontally (default 1)
    */
   HUB08_Panel(uint16_t width, uint16_t height, uint16_t chain = 1);
 
@@ -209,7 +198,6 @@ public:
    * @return true if successful, false if memory allocation failed
    */
   bool begin(const HUB08_Config &cfg);
-
   /**
    * @brief Initialize with individual pin parameters
    * @param r1 Data R1 pin number (D8 recommended)

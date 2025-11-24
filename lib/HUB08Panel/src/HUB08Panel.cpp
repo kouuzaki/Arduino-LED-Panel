@@ -67,7 +67,6 @@ bool HUB08_Panel::begin(const HUB08_Config &cfg)
     TCCR2B = (TCCR2B & 0b11111000) | 0x01;
     OCR2B = 255 - pgm_read_byte(&dim_curve[brightness]);
 #endif
-
     initialized = true;
 
     // Timer 1 Setup for Row Scanning
@@ -151,15 +150,8 @@ void HUB08_Panel::scan()
 #endif
 
 #if defined(__AVR_ATmega2560__)
-    // ===== MEGA 2560 OPTIMIZED FOR PORT A =====
-    // Pin 22 (PA0) = R1
-    // Pin 23 (PA1) = R2
-    // Pin 24 (PA2) = CLK
-    // Pin 25 (PA3) = LAT
-
-    // Kita baca kondisi PORTA saat ini, tapi mask bit 0-3 (R1,R2,CLK,LAT) menjadi 0
-    // agar bit lain di PORTA tidak terganggu
-    uint8_t basePort = PORTA & 0xF0;
+    // ===== MEGA 2560 - Custom mapping (D5..D8) =====
+    // Pins may be on different ports (PORTE / PORTH), write each port separately
 
     for (uint8_t i = 0; i < bytesPerRow; i++)
     {
@@ -168,63 +160,73 @@ void HUB08_Panel::scan()
 
         for (uint8_t b = 0; b < 8; b++)
         {
-            uint8_t out = basePort; // Mulai dari base (CLK=0, LAT=0)
-
-            // Set R1 (Bit 0)
+            // Set R1
             if (ur & 0x80)
-                out |= (1 << 0);
-            // Set R2 (Bit 1)
+                HUB_R1_PORT |= (1 << HUB_R1_BIT);
+            else
+                HUB_R1_PORT &= ~(1 << HUB_R1_BIT);
+
+            // Set R2
             if (lr & 0x80)
-                out |= (1 << 1);
+                HUB_R2_PORT |= (1 << HUB_R2_BIT);
+            else
+                HUB_R2_PORT &= ~(1 << HUB_R2_BIT);
 
-            // Write Data
-            PORTA = out;
-
-            // Clock Pulse (Toggle Bit 2 / Pin 24)
-            PORTA |= (1 << 2);  // CLK HIGH
-            PORTA &= ~(1 << 2); // CLK LOW
+            // Clock Pulse
+            HUB_CLK_PORT |= (1 << HUB_CLK_BIT);  // CLK HIGH
+            HUB_CLK_PORT &= ~(1 << HUB_CLK_BIT); // CLK LOW
 
             ur <<= 1;
             lr <<= 1;
         }
     }
 
-    // Latch Pulse (Toggle Bit 3 / Pin 25)
-    PORTA |= (1 << 3);  // LAT HIGH
-    PORTA &= ~(1 << 3); // LAT LOW
+    // Latch Pulse
+    HUB_LAT_PORT |= (1 << HUB_LAT_BIT);  // LAT HIGH
+    HUB_LAT_PORT &= ~(1 << HUB_LAT_BIT); // LAT LOW
 
     // Set Address (PORTF 0-3) - A0-A3
-    uint8_t pf = PORTF & 0xF0;
+    uint8_t pf = HUB_ADDR_PORT & 0xF0;
     pf |= (row & 0x0F);
-    PORTF = pf;
+    HUB_ADDR_PORT = pf;
 
 #else
-    // ===== UNO STANDARD =====
-    // (Kode asli untuk Uno, tidak berubah)
+    // ===== UNO / 328P - Custom mapping (D5..D8) =====
     for (uint8_t i = 0; i < bytesPerRow; i++)
     {
         uint8_t ur = upper[i];
         uint8_t lr = lower ? lower[i] : 0x00;
         for (uint8_t b = 0; b < 8; b++)
         {
-            uint8_t out = PORTB & 0b11111000;
+            // R1 (PD5)
             if (ur & 0x80)
-                out |= (1 << 0);
+                HUB_R1_PORT |= (1 << HUB_R1_BIT);
+            else
+                HUB_R1_PORT &= ~(1 << HUB_R1_BIT);
+
+            // R2 (PD6)
             if (lr & 0x80)
-                out |= (1 << 1);
-            PORTB = out;
-            PORTB |= (1 << 2);
-            PORTB &= ~(1 << 2);
+                HUB_R2_PORT |= (1 << HUB_R2_BIT);
+            else
+                HUB_R2_PORT &= ~(1 << HUB_R2_BIT);
+
+            // Clock pulse (PD7)
+            HUB_CLK_PORT |= (1 << HUB_CLK_BIT);
+            HUB_CLK_PORT &= ~(1 << HUB_CLK_BIT);
+
             ur <<= 1;
             lr <<= 1;
         }
     }
-    PORTB &= ~(1 << 2);
-    uint8_t pc = PORTC & 0xF0;
+
+    // Latch pulse
+    HUB_LAT_PORT |= (1 << HUB_LAT_BIT);
+    HUB_LAT_PORT &= ~(1 << HUB_LAT_BIT);
+
+    // Address (PORTC 0-3)
+    uint8_t pc = HUB_ADDR_PORT & 0xF0;
     pc |= (row & 0x0F);
-    PORTC = pc;
-    PORTB |= (1 << 3);
-    PORTB &= ~(1 << 3);
+    HUB_ADDR_PORT = pc;
 #endif
 
     // RESTORE OE

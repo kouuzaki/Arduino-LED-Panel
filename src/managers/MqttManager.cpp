@@ -1,5 +1,5 @@
 #include "MqttManager.h"
-#include "../interface/DeviceSystemInfo.h" // Mengambil data sistem untuk heartbeat
+#include "../interface/DeviceSystemInfo.h"
 
 MqttManager::MqttManager(PubSubClient &mqttClient, const char *name)
     : client(mqttClient), device_name(name),

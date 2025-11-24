@@ -3,7 +3,10 @@
 
 #include <Arduino.h>
 #include <Ethernet.h>
-#include "DeviceSystemInfo.h"
+#include <avr/wdt.h>
+#include "../interface/DeviceSystemInfo.h"
+#include "storage/FileStorage.h"
+#include <ArduinoJson.h>
 
 class ApiHandler
 {
@@ -74,10 +77,135 @@ public:
         Serial.print(" ");
         Serial.println(path);
 
-        // --- 3. Route Handler ---
+        // --- 3. Read headers (for POST content length) ---
+        int contentLength = 0;
+        unsigned long deadline = millis() + 1000;
+
+        // Read headers line by line
+        while (client.connected() && millis() < deadline)
+        {
+            if (client.available())
+            {
+                String line = client.readStringUntil('\n');
+                line.trim(); // Remove \r
+
+                if (line.length() == 0)
+                {
+                    // Empty line = End of Headers
+                    break;
+                }
+
+                // Check for Content-Length (Case Insensitive)
+                if (line.startsWith("Content-Length:") || line.startsWith("content-length:") || line.startsWith("Content-length:"))
+                {
+                    int separatorIndex = line.indexOf(':');
+                    if (separatorIndex != -1)
+                    {
+                        String val = line.substring(separatorIndex + 1);
+                        val.trim();
+                        contentLength = val.toInt();
+                    }
+                }
+            }
+        }
+
+        // --- 4. Route Handler ---
         if (strcmp(method, "GET") == 0 && strcmp(path, "/api/device/info") == 0)
         {
             handleDeviceInfo(client);
+        }
+        else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/device/config") == 0)
+        {
+            // Read body if contentLength provided
+            if (contentLength <= 0 || contentLength > 2048)
+            {
+                // Bad content length
+                client.println("HTTP/1.1 400 Bad Request");
+                client.println("Content-Type: application/json");
+                client.println("Connection: close");
+                client.println();
+                client.print("{\"error\":\"invalid content-length\"}");
+            }
+            else
+            {
+                // Read body
+                char *body = (char *)malloc(contentLength + 1);
+                if (!body)
+                {
+                    client.println("HTTP/1.1 500 Internal Server Error");
+                    client.println("Content-Type: application/json");
+                    client.println("Connection: close");
+                    client.println();
+                    client.print("{\"error\":\"out of memory\"}");
+                }
+                else
+                {
+                    int read = 0;
+                    unsigned long deadline = millis() + 1000;
+                    while (read < contentLength && millis() < deadline)
+                    {
+                        if (client.available())
+                        {
+                            body[read++] = client.read();
+                        }
+                    }
+                    body[read] = '\0';
+
+                    // parse JSON
+                    DynamicJsonDocument doc(2048);
+                    DeserializationError err = deserializeJson(doc, body);
+                    free(body);
+
+                    if (err)
+                    {
+                        client.println("HTTP/1.1 400 Bad Request");
+                        client.println("Content-Type: application/json");
+                        client.println("Connection: close");
+                        client.println();
+                        client.print("{\"error\":\"invalid json\"}");
+                    }
+                    else
+                    {
+                        // validate fields and save
+                        JsonObject obj = doc.as<JsonObject>();
+                        // minimal validation
+                        if (!obj.containsKey("device_id") || !obj.containsKey("mqtt_server"))
+                        {
+                            client.println("HTTP/1.1 422 Unprocessable Entity");
+                            client.println("Content-Type: application/json");
+                            client.println("Connection: close");
+                            client.println();
+                            client.print("{\"error\":\"missing required fields\"}");
+                        }
+                        else
+                        {
+                            bool ok = FileStorage::saveDeviceConfig(doc);
+                            if (ok)
+                            {
+                                client.println("HTTP/1.1 200 OK");
+                                client.println("Content-Type: application/json");
+                                client.println("Connection: close");
+                                client.println();
+                                client.print("{\"ok\":true,\"message\":\"Config saved. Device restarting...\"}");
+
+                                // Close connection and delay to ensure response is sent
+                                delay(100);
+
+                                // Trigger software reset
+                                triggerReset();
+                            }
+                            else
+                            {
+                                client.println("HTTP/1.1 500 Internal Server Error");
+                                client.println("Content-Type: application/json");
+                                client.println("Connection: close");
+                                client.println();
+                                client.print("{\"error\":\"failed to save\"}");
+                            }
+                        }
+                    }
+                }
+            }
         }
         else
         {
@@ -90,25 +218,33 @@ public:
     }
 
 private:
+    // Trigger software reset via watchdog timer
+    void triggerReset()
+    {
+        // Disable interrupts
+        cli();
+
+        // Enable watchdog timer with shortest timeout (~16ms)
+        wdt_enable(WDTO_15MS);
+
+        // Wait for watchdog to trigger reset
+        while (1)
+            ;
+    }
+
     void handleDeviceInfo(EthernetClient &client)
     {
-        // Buffer besar untuk Full JSON
-        char jsonBuffer[512];
+        // Build standard API response
+        JsonDocument response;
+        SystemInfo::buildFullApiResponse(response);
 
-        // Panggil fungsi central dari DeviceSystemInfo
-        SystemInfo::buildFullApiJSON(jsonBuffer, sizeof(jsonBuffer));
-
-        // Kirim HTTP Headers
+        // Send Response
         client.println("HTTP/1.1 200 OK");
         client.println("Content-Type: application/json");
-        client.print("Content-Length: ");
-        client.println(strlen(jsonBuffer));
         client.println("Connection: close");
-        client.println("Access-Control-Allow-Origin: *"); // Optional: CORS
         client.println();
 
-        // Kirim Body JSON
-        client.print(jsonBuffer);
+        serializeJson(response, client);
     }
 
     void handleNotFound(EthernetClient &client)

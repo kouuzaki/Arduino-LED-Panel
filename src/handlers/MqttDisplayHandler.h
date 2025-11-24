@@ -28,6 +28,12 @@ public:
         snprintf(cmdTopic, sizeof(cmdTopic), "device/%s/cmd/display", device_name);
     }
 
+    void setDeviceId(const char *newId)
+    {
+        device_name = newId;
+        snprintf(cmdTopic, sizeof(cmdTopic), "device/%s/cmd/display", device_name);
+    }
+
     void subscribe()
     {
         if (client.connected())

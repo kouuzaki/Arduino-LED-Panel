@@ -51,17 +51,20 @@
 
 /// ========== Network Configuration ==========
 byte mac[] = {0x02, 0x00, 0x00, 0x01, 0x02, 0x03};
+// Default values as requested
 IPAddress ip(192, 168, 1, 60);
-IPAddress gateway(192, 168, 1, 1);
+
+IPAddress gateway(1, 1, 1, 1);
 IPAddress subnet(255, 255, 255, 0);
+IPAddress dns(8, 8, 8, 8);
 
 IPAddress mqttBroker(192, 168, 1, 1);
-const uint16_t mqttPort = 1884;
-const char *deviceName = "iot_led_panel";
+uint16_t mqttPort = 1884;
 
-// MQTT credentials (hardcoded for this device)
-static const char *MQTT_USER = "edgeadmin";
-static const char *MQTT_PASS = "edge123";
+// MQTT credentials (defaults)
+String mqttUser = "edgeadmin";
+String mqttPass = "edge123";
+char deviceId[32] = "led_lilygo";
 
 /// ========== Global Objects ==========
 HUB08_Panel display(64, 32, 2);
@@ -70,10 +73,10 @@ PubSubClient mqttClient(ethClient);
 
 /// ========== Managers & Handlers ==========
 // MqttManager mengurus koneksi, reconnect, dan heartbeat
-MqttManager mqttManager(mqttClient, deviceName);
+MqttManager mqttManager(mqttClient, deviceId);
 
 // MqttDisplayHandler mengurus parsing JSON dan update layar
-MqttDisplayHandler displayHandler(mqttClient, display, deviceName);
+MqttDisplayHandler displayHandler(mqttClient, display, deviceId);
 
 // ApiHandler mengurus HTTP Request
 ApiHandler apiHandler;
@@ -114,6 +117,67 @@ void setup()
     pinMode(MEGA_HW_SS, OUTPUT);
     digitalWrite(MEGA_HW_SS, HIGH);
 
+    // Init FileStorage (EEPROM)
+    if (FileStorage::begin())
+    {
+        Serial.println("✓ Storage (EEPROM) Init OK");
+
+        // Load Config
+        JsonDocument doc;
+        if (FileStorage::loadDeviceConfig(doc))
+        {
+            Serial.println("✓ Config Loaded from EEPROM");
+            if (doc.containsKey("device_id"))
+            {
+                strlcpy(deviceId, doc["device_id"], sizeof(deviceId));
+                // Update Managers with new ID
+                mqttManager.setDeviceId(deviceId);
+                displayHandler.setDeviceId(deviceId);
+            }
+            if (doc.containsKey("mqtt_server"))
+            {
+                String s = doc["mqtt_server"].as<String>();
+                mqttBroker.fromString(s);
+            }
+            if (doc.containsKey("mqtt_port"))
+                mqttPort = doc["mqtt_port"];
+            if (doc.containsKey("mqtt_username"))
+                mqttUser = doc["mqtt_username"].as<String>();
+            if (doc.containsKey("mqtt_password"))
+                mqttPass = doc["mqtt_password"].as<String>();
+
+            // Network Config
+            if (doc.containsKey("ip"))
+            {
+                String s = doc["ip"].as<String>();
+                ip.fromString(s);
+            }
+            if (doc.containsKey("gateway"))
+            {
+                String s = doc["gateway"].as<String>();
+                gateway.fromString(s);
+            }
+            if (doc.containsKey("subnet_mask"))
+            {
+                String s = doc["subnet_mask"].as<String>();
+                subnet.fromString(s);
+            }
+            if (doc.containsKey("dns_primary"))
+            {
+                String s = doc["dns_primary"].as<String>();
+                dns.fromString(s);
+            }
+        }
+        else
+        {
+            Serial.println("! Config Not Found, using defaults");
+        }
+    }
+    else
+    {
+        Serial.println("✗ Storage Init Failed");
+    }
+
     // 2. Init Display
     Serial.println("1. Init Display...");
     if (display.begin(R1, R2, CLK, LAT, OE, A, B, C, D, 64, 32, 2, 16))
@@ -135,7 +199,7 @@ void setup()
 
     // 3. Init Ethernet
     Serial.println("2. Init Ethernet...");
-    Ethernet.begin(mac, ip, gateway, gateway, subnet);
+    Ethernet.begin(mac, ip, dns, gateway, subnet);
     if (Ethernet.hardwareStatus() == EthernetNoHardware)
     {
         Serial.println("✗ No Ethernet Hardware");
@@ -159,7 +223,7 @@ void setup()
     mqttManager.setReconnectCallback(onMqttConnected);
 
     // Mulai Manager (Koneksi & Auth)
-    mqttManager.begin(mqttBroker, mqttPort, MQTT_USER, MQTT_PASS);
+    mqttManager.begin(mqttBroker, mqttPort, mqttUser.c_str(), mqttPass.c_str());
 
     Serial.println("✓ System Ready");
     display.drawTextMultilineCentered("SYSTEM\nREADY");

@@ -18,6 +18,7 @@ private:
     String mqtt_user;
     String mqtt_pass;
     bool has_auth;
+    IPAddress server_ip;
 
     // Timers
     unsigned long lastHeartbeat;
@@ -38,6 +39,9 @@ public:
     // Setup awal
     void begin(IPAddress host, uint16_t port, const char *user = nullptr, const char *pass = nullptr);
 
+    // Update Device ID dynamically
+    void setDeviceId(const char *newId);
+
     // Loop utama (panggil di main loop)
     void update();
 
@@ -46,6 +50,13 @@ public:
 
     bool isConnected();
     bool publish(const char *topic, const char *payload, bool retained = false);
+
+    String getMqttServerIP() const
+    {
+        return String(server_ip[0]) + "." + String(server_ip[1]) + "." +
+               String(server_ip[2]) + "." + String(server_ip[3]);
+    }
+    String getConnectionStatus() { return client.connected() ? "connected" : "disconnected"; }
 
 private:
     bool connect();

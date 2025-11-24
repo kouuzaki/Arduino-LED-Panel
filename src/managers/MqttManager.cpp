@@ -1,5 +1,5 @@
 #include "MqttManager.h"
-#include "DeviceSystemInfo.h" // Mengambil data sistem untuk heartbeat
+#include "../interface/DeviceSystemInfo.h" // Mengambil data sistem untuk heartbeat
 
 MqttManager::MqttManager(PubSubClient &mqttClient, const char *name)
     : client(mqttClient), device_name(name),
@@ -17,6 +17,7 @@ void MqttManager::begin(IPAddress host, uint16_t port, const char *user, const c
     Serial.print(":");
     Serial.println(port);
 
+    server_ip = host;
     client.setServer(host, port);
 
     if (user && strlen(user) > 0)
@@ -29,6 +30,14 @@ void MqttManager::begin(IPAddress host, uint16_t port, const char *user, const c
     {
         has_auth = false;
     }
+}
+
+void MqttManager::setDeviceId(const char *newId)
+{
+    device_name = newId;
+    // Re-generate topics
+    snprintf(infoTopic, sizeof(infoTopic), "device/%s/info", device_name);
+    snprintf(statusTopic, sizeof(statusTopic), "device/%s/status", device_name);
 }
 
 void MqttManager::setReconnectCallback(ReconnectCallback cb)

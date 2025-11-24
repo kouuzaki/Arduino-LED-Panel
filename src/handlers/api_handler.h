@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <Ethernet.h>
-#include <DeviceSystemInfo.h>
+#include "DeviceSystemInfo.h"
 
 class ApiHandler
 {
@@ -17,7 +17,7 @@ public:
     void begin()
     {
         server.begin();
-        Serial.print("API Server on port ");
+        Serial.print("API Server started on port ");
         Serial.println(API_PORT);
     }
 
@@ -27,24 +27,23 @@ public:
         if (!client)
             return;
 
-        // Read HTTP request line with fixed buffer (no String concatenation!)
+        // --- 1. Read Request Line ---
         char requestLine[128];
         int idx = 0;
-        boolean foundRequestLine = false;
-        unsigned long timeout = millis() + 500; // 500ms timeout
-        
+        bool foundRequestLine = false;
+        unsigned long timeout = millis() + 500;
+
         while (client.connected() && millis() < timeout)
         {
             if (client.available())
             {
                 char c = client.read();
-                if (idx < sizeof(requestLine) - 1)
+                if (idx < (int)sizeof(requestLine) - 1)
                 {
                     requestLine[idx++] = c;
-                    // Check for end of request line
-                    if (idx >= 2 && requestLine[idx-2] == '\r' && requestLine[idx-1] == '\n')
+                    if (idx >= 2 && requestLine[idx - 2] == '\r' && requestLine[idx - 1] == '\n')
                     {
-                        requestLine[idx-2] = '\0'; // Null terminate before \r\n
+                        requestLine[idx - 2] = '\0';
                         foundRequestLine = true;
                         break;
                     }
@@ -58,41 +57,24 @@ public:
             return;
         }
 
-        // Parse request line: "GET /api/device/info HTTP/1.1"
+        // --- 2. Parse Method & Path ---
         char method[16] = {0};
         char path[128] = {0};
-        
-        int parsed = sscanf(requestLine, "%15s %127s", method, path);
-        
-        if (parsed != 2)
-        {
-            handleNotFound(client);
-            delay(1);
-            client.stop();
-            return;
-        }
 
-        // Normalize path: remove query string
-        char *queryPos = strchr(path, '?');
-        if (queryPos != NULL)
-        {
-            *queryPos = '\0'; // Null terminate at ?
-        }
+        // Simple parsing
+        sscanf(requestLine, "%15s %127s", method, path);
 
-        // Remove trailing slash (but keep single /)
-        int pathLen = strlen(path);
-        if (pathLen > 1 && path[pathLen-1] == '/')
-        {
-            path[pathLen-1] = '\0';
-        }
+        // Clean path (remove querystring)
+        char *q = strchr(path, '?');
+        if (q)
+            *q = 0;
 
-        // Debug: print what we received
-        Serial.print("REQ: ");
+        Serial.print("API REQ: ");
         Serial.print(method);
         Serial.print(" ");
         Serial.println(path);
 
-        // Handle GET /api/device/info
+        // --- 3. Route Handler ---
         if (strcmp(method, "GET") == 0 && strcmp(path, "/api/device/info") == 0)
         {
             handleDeviceInfo(client);
@@ -102,61 +84,43 @@ public:
             handleNotFound(client);
         }
 
-        delay(1);
+        // Give time for browser to receive data
+        delay(5);
         client.stop();
     }
 
 private:
-    void sendHttpHeaders(EthernetClient &client, const char *contentType, int contentLength)
-    {
-        client.println("HTTP/1.1 200 OK");
-        client.print("Content-Type: ");
-        client.println(contentType);
-        client.print("Content-Length: ");
-        client.println(contentLength);
-        client.println("Connection: close");
-        client.println();
-    }
-
     void handleDeviceInfo(EthernetClient &client)
     {
-        // Pre-calculate JSON size by building it to a buffer first
-        char tempBuffer[350];
-        
-        unsigned long ms = millis();
-        unsigned long seconds = ms / 1000;
-        unsigned long hours = (seconds % 86400) / 3600;
-        unsigned long minutes = (seconds % 3600) / 60;
-        unsigned long secs = seconds % 60;
+        // Buffer besar untuk Full JSON
+        char jsonBuffer[512];
 
-        IPAddress ip = Ethernet.localIP();
+        // Panggil fungsi central dari DeviceSystemInfo
+        SystemInfo::buildFullApiJSON(jsonBuffer, sizeof(jsonBuffer));
 
-        extern int __heap_start, *__brkval;
-        int v;
-        int freeRam = (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
-
-        // Calculate content length
-        int len = snprintf(tempBuffer, sizeof(tempBuffer),
-            "{\"device_id\":\"iot_led_panel\",\"ip\":\"%d.%d.%d.%d\",\"mac_address\":\"DE:AD:BE:EF:FE:ED\",\"uptime\":\"%02lu:%02lu:%02lu\",\"uptime_ms\":%lu,\"free_memory\":%d,\"total_memory\":2048,\"network\":{\"gateway\":\"192.168.1.1\",\"subnet_mask\":\"255.255.255.0\",\"dns_primary\":\"192.168.1.1\",\"dns_secondary\":\"8.8.8.8\"},\"services\":{\"api\":\"running\",\"mqtt\":\"active\",\"led_panel\":\"scanning\"}}",
-            ip[0], ip[1], ip[2], ip[3], hours, minutes, secs, ms, freeRam);
-        
-        // Send HTTP headers with accurate Content-Length
+        // Kirim HTTP Headers
         client.println("HTTP/1.1 200 OK");
         client.println("Content-Type: application/json");
         client.print("Content-Length: ");
-        client.println(len);
+        client.println(strlen(jsonBuffer));
         client.println("Connection: close");
+        client.println("Access-Control-Allow-Origin: *"); // Optional: CORS
         client.println();
-        
-        // Send JSON body
-        client.print(tempBuffer);
+
+        // Kirim Body JSON
+        client.print(jsonBuffer);
     }
 
     void handleNotFound(EthernetClient &client)
     {
-        const char *response = "{\"error\":\"Not Found\"}";
-        sendHttpHeaders(client, "application/json", strlen(response));
-        client.print(response);
+        const char *msg = "{\"error\":\"Not Found\"}";
+        client.println("HTTP/1.1 404 Not Found");
+        client.println("Content-Type: application/json");
+        client.print("Content-Length: ");
+        client.println(strlen(msg));
+        client.println("Connection: close");
+        client.println();
+        client.print(msg);
     }
 };
 

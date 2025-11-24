@@ -37,81 +37,55 @@ HUB08_Panel::HUB08_Panel(uint16_t w, uint16_t h, uint16_t chain)
 bool HUB08_Panel::begin(const HUB08_Config &cfg)
 {
     config = cfg;
-
-    /// Allocate two buffers (double buffering strategy)
-    /// Front buffer: read by ISR during scan()
-    /// Back buffer: written to by Adafruit_GFX drawing functions
     uint8_t *raw = (uint8_t *)malloc(bufferSize * 2);
     if (!raw)
         return false;
-
     bufferFront = raw;
     bufferBack = raw + bufferSize;
-
-    /// Initialize both buffers to black (0x00)
     memset(bufferFront, 0, bufferSize);
     memset(bufferBack, 0, bufferSize);
 
-    /// Configure GPIO pins as outputs
-    pinMode(cfg.data_pin_r1, OUTPUT); // D8  → PORTB[0]
-    pinMode(cfg.data_pin_r2, OUTPUT); // D9  → PORTB[1]
-    pinMode(cfg.clock_pin, OUTPUT);   // D10 → PORTB[2]
-    pinMode(cfg.latch_pin, OUTPUT);   // D11 → PORTB[3]
-    pinMode(cfg.enable_pin, OUTPUT);  // D3
-
-    pinMode(cfg.addr_a, OUTPUT); // A0
-    pinMode(cfg.addr_b, OUTPUT); // A1
-    pinMode(cfg.addr_c, OUTPUT); // A2
-    pinMode(cfg.addr_d, OUTPUT); // A3
-
-    /// ========== Setup PWM for brightness control on OE pin ==========
-    /// Timer selection is MCU-dependent:
-    /// - UNO (ATmega328P): D3 = OC2B (Timer2)
-    /// - MEGA (ATmega2560): D3 = OC3C (Timer3)
+    // Setup Pins
+    pinMode(cfg.data_pin_r1, OUTPUT);
+    pinMode(cfg.data_pin_r2, OUTPUT);
+    pinMode(cfg.clock_pin, OUTPUT);
+    pinMode(cfg.latch_pin, OUTPUT);
+    pinMode(cfg.enable_pin, OUTPUT);
+    pinMode(cfg.addr_a, OUTPUT);
+    pinMode(cfg.addr_b, OUTPUT);
+    pinMode(cfg.addr_c, OUTPUT);
+    pinMode(cfg.addr_d, OUTPUT);
 
 #if defined(__AVR_ATmega2560__)
     // MEGA 2560 - OE = D3 = OC3C (Timer3)
-    // Fast PWM mode, TOP = 0xFF, prescaler = 1 (~31 kHz)
     TCCR3A = (1 << COM3C1) | (1 << WGM30);
     TCCR3B = (1 << WGM32) | (1 << CS30);
-
-    uint8_t dim = pgm_read_byte(&dim_curve[brightness]);
-    OCR3C = 255 - dim;
-
+    OCR3C = 255 - pgm_read_byte(&dim_curve[brightness]);
 #elif defined(__AVR_ATmega328P__)
     // UNO - OE = D3 = OC2B (Timer2)
-    // Fast PWM mode using analogWrite
     analogWrite(cfg.enable_pin, 128);
-    TCCR2B = (TCCR2B & 0b11111000) | 0x01; // prescaler = 1
-
-    uint8_t dim = pgm_read_byte(&dim_curve[brightness]);
-    OCR2B = 255 - dim;
-
+    TCCR2B = (TCCR2B & 0b11111000) | 0x01;
+    OCR2B = 255 - pgm_read_byte(&dim_curve[brightness]);
 #endif
 
     initialized = true;
 
-    /// ========== Setup Timer1 for row refresh scanning ==========
-    /// CTC mode, no prescaling: 16 MHz / (1599+1) = 10 kHz
-    cli(); // Disable interrupts during timer setup
+    // Timer 1 Setup for Row Scanning
+    cli();
+    TCCR1A = 0;
+    TCCR1B = 0;
+    TCNT1 = 0;
 
-    TCCR1A = 0; // Clear control register
-    TCCR1B = 0; // Clear control register
-    TCNT1 = 0;  // Clear counter
+    // --- PERBAIKAN DISINI ---
+    // Ganti 1599 (10kHz) menjadi 7999 (2kHz)
+    // Rumus: (16.000.000 / Frekuensi) - 1
+    // 10kHz = 1599 (Terlalu berat untuk 2 panel)
+    // 2kHz  = 7999 (Ringan, CPU Load hanya ~40%)
+    OCR1A = 7999;
 
-    /// Set compare match value for 10 kHz rate
-    OCR1A = 1599;
-
-    /// Enable CTC (Clear Timer on Compare Match) mode
-    TCCR1B |= (1 << WGM12);
-
-    /// Set prescaler to 1 (no prescaling)
-    TCCR1B |= (1 << CS10);
-
-    /// Enable Timer1 Compare Match A interrupt
+    TCCR1B |= (1 << WGM12) | (1 << CS10); // CTC Mode, Prescaler 1
     TIMSK1 |= (1 << OCIE1A);
-
-    sei(); // Re-enable interrupts
+    sei();
 
     return true;
 }
@@ -120,29 +94,24 @@ bool HUB08_Panel::begin(const HUB08_Config &cfg)
  * @brief Parameterized initialization (convenience wrapper)
  * Creates HUB08_Config from individual pin parameters and calls begin(cfg)
  */
-bool HUB08_Panel::begin(
-    int8_t r1, int8_t r2, int8_t clk, int8_t lat, int8_t oe,
-    int8_t A, int8_t B, int8_t C, int8_t D,
-    uint16_t w, uint16_t h, uint16_t chain, uint8_t scan)
+bool HUB08_Panel::begin(int8_t r1, int8_t r2, int8_t clk, int8_t lat, int8_t oe,
+                        int8_t A, int8_t B, int8_t C, int8_t D,
+                        uint16_t w, uint16_t h, uint16_t chain, uint8_t scan)
 {
     HUB08_Config cfg;
-
     cfg.data_pin_r1 = r1;
     cfg.data_pin_r2 = r2;
     cfg.clock_pin = clk;
     cfg.latch_pin = lat;
     cfg.enable_pin = oe;
-
     cfg.addr_a = A;
     cfg.addr_b = B;
     cfg.addr_c = C;
     cfg.addr_d = D;
-
     cfg.panel_width = w;
     cfg.panel_height = h;
     cfg.chain_length = chain;
     cfg.panel_scan = scan;
-
     return begin(cfg);
 }
 
@@ -165,162 +134,106 @@ void HUB08_Panel::scan()
 {
     if (!initialized)
         return;
-
     static uint8_t row = 0;
-
-    /// Calculate bytes per row: (width × chain) / 8 pixels per byte
     uint8_t bytesPerRow = (config.panel_width * config.chain_length) / 8;
-
-    /// Get pointers to front buffer data for this row
     uint8_t *upper = bufferFront + row * bytesPerRow;
     uint8_t *lower = nullptr;
-
-    /// For 64×32 1/16 scan: lower half is offset by 16 rows
     if (config.panel_height >= (config.panel_scan * 2))
         lower = bufferFront + (row + config.panel_scan) * bytesPerRow;
 
-    /// ===== Disable OE during data shifting to prevent ghosting =====
+    // DISABLE OE (HIGH)
 #if defined(__AVR_ATmega2560__)
-    uint8_t savedOCR3C = OCR3C;
-    OCR3C = 255; // OE HIGH = output disabled
+    uint8_t savedOCR = OCR3C;
+    OCR3C = 255;
 #else
-    uint8_t savedOCR2B = OCR2B;
-    OCR2B = 255; // OE HIGH = output disabled
+    uint8_t savedOCR = OCR2B;
+    OCR2B = 255;
 #endif
 
 #if defined(__AVR_ATmega2560__)
-    /// ===== MEGA 2560: R1/R2 split across PORTH[5-6] and CLK/LAT on PORTB[4-5] =====
-    /// PORTH mapping:
-    ///   [5] = D8  (R1 data)
-    ///   [6] = D9  (R2 data)
-    /// PORTB mapping:
-    ///   [4] = D10 (CLK)
-    ///   [5] = D11 (LAT)
+    // ===== MEGA 2560 OPTIMIZED FOR PORT A =====
+    // Pin 22 (PA0) = R1
+    // Pin 23 (PA1) = R2
+    // Pin 24 (PA2) = CLK
+    // Pin 25 (PA3) = LAT
+
+    // Kita baca kondisi PORTA saat ini, tapi mask bit 0-3 (R1,R2,CLK,LAT) menjadi 0
+    // agar bit lain di PORTA tidak terganggu
+    uint8_t basePort = PORTA & 0xF0;
 
     for (uint8_t i = 0; i < bytesPerRow; i++)
     {
-        uint8_t ur = upper[i];                // Upper half byte
-        uint8_t lr = lower ? lower[i] : 0x00; // Lower half byte (or 0 if not used)
+        uint8_t ur = upper[i];
+        uint8_t lr = lower ? lower[i] : 0x00;
 
-        /// Shift 8 bits per byte, MSB first (0x80 = 10000000)
         for (uint8_t b = 0; b < 8; b++)
         {
-            /// Prepare PORTH value: preserve bits 0-4 and 7, set only 5-6
-            uint8_t porth = PORTH & 0b10011111;
+            uint8_t out = basePort; // Mulai dari base (CLK=0, LAT=0)
 
-            /// Set R1 (PH5) if upper bit is set
+            // Set R1 (Bit 0)
             if (ur & 0x80)
-                porth |= (1 << 5);
-
-            /// Set R2 (PH6) if lower bit is set
+                out |= (1 << 0);
+            // Set R2 (Bit 1)
             if (lr & 0x80)
-                porth |= (1 << 6);
+                out |= (1 << 1);
 
-            /// Write data to PORTH
-            PORTH = porth;
+            // Write Data
+            PORTA = out;
 
-            /// Clock pulse: HIGH then LOW (PORTB[4] = PB4 = D10)
-            PORTB |= (1 << 4);  // Clock HIGH
-            PORTB &= ~(1 << 4); // Clock LOW
+            // Clock Pulse (Toggle Bit 2 / Pin 24)
+            PORTA |= (1 << 2);  // CLK HIGH
+            PORTA &= ~(1 << 2); // CLK LOW
 
-            /// Shift to next bit
             ur <<= 1;
             lr <<= 1;
         }
     }
 
-    /// Ensure clock is LOW after shifting
-    PORTB &= ~(1 << 4);
+    // Latch Pulse (Toggle Bit 3 / Pin 25)
+    PORTA |= (1 << 3);  // LAT HIGH
+    PORTA &= ~(1 << 3); // LAT LOW
 
-    /// ===== SET ROW ADDRESS on PORTF (A, B, C, D) =====
-    /// PORTF mapping:
-    ///   [0] = A0 (Address A)
-    ///   [1] = A1 (Address B)
-    ///   [2] = A2 (Address C)
-    ///   [3] = A3 (Address D)
-
-    uint8_t pf = PORTF & 0xF0; // Preserve bits 4-7
-    pf |= (row & 0x0F);        // Set address bits 0-3
+    // Set Address (PORTF 0-3) - A0-A3
+    uint8_t pf = PORTF & 0xF0;
+    pf |= (row & 0x0F);
     PORTF = pf;
 
-    /// Brief settle time for address lines
-    asm volatile("nop\nnop\nnop\nnop");
-
-    /// ===== LATCH PULSE (LAT = PORTB[5]) =====
-    PORTB |= (1 << 5);  // LAT HIGH
-    PORTB &= ~(1 << 5); // LAT LOW
-
 #else
-    /// ===== UNO (ATmega328P): All control pins on PORTB[0-3] =====
-    /// PORTB mapping:
-    ///   [0] = D8  (R1 data)
-    ///   [1] = D9  (R2 data)
-    ///   [2] = D10 (CLK)
-    ///   [3] = D11 (LAT)
-
+    // ===== UNO STANDARD =====
+    // (Kode asli untuk Uno, tidak berubah)
     for (uint8_t i = 0; i < bytesPerRow; i++)
     {
-        uint8_t ur = upper[i];                // Upper half byte
-        uint8_t lr = lower ? lower[i] : 0x00; // Lower half byte (or 0 if not used)
-
-        /// Shift 8 bits per byte, MSB first (0x80 = 10000000)
+        uint8_t ur = upper[i];
+        uint8_t lr = lower ? lower[i] : 0x00;
         for (uint8_t b = 0; b < 8; b++)
         {
-            /// Prepare PORTB value: preserve bits 4-7, clear 0-2
             uint8_t out = PORTB & 0b11111000;
-
-            /// Set R1 if upper bit is set
             if (ur & 0x80)
-                out |= (1 << 0); // PORTB[0] = PB0 (D8)
-
-            /// Set R2 if lower bit is set
+                out |= (1 << 0);
             if (lr & 0x80)
-                out |= (1 << 1); // PORTB[1] = PB1 (D9)
-
-            /// Write data to PORTB
+                out |= (1 << 1);
             PORTB = out;
-
-            /// Clock pulse: HIGH then LOW
-            PORTB |= (1 << 2);  // Clock HIGH (PORTB[2] = PB2 = D10)
-            PORTB &= ~(1 << 2); // Clock LOW
-
-            /// Shift to next bit
+            PORTB |= (1 << 2);
+            PORTB &= ~(1 << 2);
             ur <<= 1;
             lr <<= 1;
         }
     }
-
-    /// Ensure clock is LOW after shifting
     PORTB &= ~(1 << 2);
-
-    /// ===== SET ROW ADDRESS on PORTC (A, B, C, D) =====
-    /// PORTC mapping:
-    ///   [0] = A0 (Address A)
-    ///   [1] = A1 (Address B)
-    ///   [2] = A2 (Address C)
-    ///   [3] = A3 (Address D)
-
-    uint8_t pc = PORTC & 0xF0; // Preserve bits 4-7
-    pc |= (row & 0x0F);        // Set address bits 0-3
+    uint8_t pc = PORTC & 0xF0;
+    pc |= (row & 0x0F);
     PORTC = pc;
-
-    /// Brief settle time for address lines
-    asm volatile("nop\nnop\nnop\nnop");
-
-    /// ===== LATCH PULSE (LAT = PORTB[3]) =====
-    PORTB |= (1 << 3);  // LAT HIGH
-    PORTB &= ~(1 << 3); // LAT LOW
-
+    PORTB |= (1 << 3);
+    PORTB &= ~(1 << 3);
 #endif
 
-    /// ===== RESTORE OE PWM BRIGHTNESS =====
+    // RESTORE OE
 #if defined(__AVR_ATmega2560__)
-    OCR3C = savedOCR3C;
+    OCR3C = savedOCR;
 #else
-    OCR2B = savedOCR2B;
+    OCR2B = savedOCR;
 #endif
 
-    /// ===== ADVANCE TO NEXT ROW =====
     row++;
     if (row >= config.panel_scan)
         row = 0;
@@ -457,6 +370,7 @@ int16_t HUB08_Panel::getTextHeight()
  *   - Centers each line horizontally and vertically on display
  *   - Swaps buffers to display
  *   - Max 8 lines supported
+ *   - Works on all supported resolutions (64×32, 128×32, etc)
  */
 void HUB08_Panel::drawTextMultilineCentered(const String &text)
 {
@@ -487,24 +401,31 @@ void HUB08_Panel::drawTextMultilineCentered(const String &text)
     if (lineCount == 0)
         return;
 
-    /// ---- 2) Calculate total height of all lines ----
-    int16_t lineHeight = getTextHeight();
-    if (lineHeight < 8)
-        lineHeight = 8; // Safety minimum
+    /// ---- 2) Get text metrics ----
+    int16_t fontHeight = getTextHeight();
+    if (fontHeight < 8)
+        fontHeight = 8; // Safety minimum
 
-    int16_t totalHeight = lineCount * lineHeight;
+    /// Tighter line spacing for multiline text
+    int16_t lineSpacing = fontHeight - 2;
+    int16_t totalHeight = (lineCount - 1) * lineSpacing + fontHeight;
 
-    /// ---- 3) Find vertical center position ----
-    int16_t startY = (height() - totalHeight) / 2 + lineHeight;
+    /// ---- 3) Calculate vertical center ----
+    /// True center: (displayHeight - textTotalHeight) / 2
+    int16_t verticalMargin = (height() - totalHeight) / 2;
+
+    /// For Adafruit fonts, setCursor uses the baseline + descent
+    /// We need to account for this to truly center
+    int16_t baselineY = verticalMargin + fontHeight;
 
     /// ---- 4) Draw and center-align each line ----
     for (uint8_t i = 0; i < lineCount; i++)
     {
-        int16_t w = getTextWidth(lines[i]);
-        int16_t x = (width() - w) / 2;
-        int16_t y = startY + i * lineHeight;
+        int16_t lineWidth = getTextWidth(lines[i]);
+        int16_t centerX = (width() - lineWidth) / 2;
+        int16_t lineY = baselineY + i * lineSpacing;
 
-        setCursor(x, y);
+        setCursor(centerX, lineY);
         print(lines[i]);
     }
 

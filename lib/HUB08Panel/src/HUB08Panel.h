@@ -33,37 +33,33 @@
 /// See README.md for full compatibility table.
 
 #if defined(__AVR_ATmega2560__)
-// ========== Arduino Mega 2560 (ATmega2560) ==========
-// Pin to PORT mapping (verified against ATmega2560 datasheet):
-// D8  → PORTH5 (R1)       - Data upper half
-// D9  → PORTH6 (R2)       - Data lower half
-// D10 → PORTB4 (CLK)      - Shift clock
-// D11 → PORTB5 (LAT)      - Latch signal
-// D3  → PORTE5 (OE)       - Output enable (Timer3 OC3C PWM)
-// A0  → PORTF0 (ADDR_A)   - Row address bit 0
-// A1  → PORTF1 (ADDR_B)   - Row address bit 1
-// A2  → PORTF2 (ADDR_C)   - Row address bit 2
-// A3  → PORTF3 (ADDR_D)   - Row address bit 3
-//
-// CRITICAL: OE uses Timer3 (OC3C), NOT Timer2
-// This is a hardware constraint of the Mega 2560 pinout
+// ========== Arduino Mega 2560 (ATmega2560) - MODIFIED FOR ETHERNET SAFETY ==========
+// Kita pindahkan semua ke PORTA (Pin 22-29) agar JAUH dari Pin 10 (Ethernet CS)
+// Pin Mapping Baru:
+// D22 -> PORTA0 (R1)
+// D23 -> PORTA1 (R2)
+// D24 -> PORTA2 (CLK)
+// D25 -> PORTA3 (LAT)
+// D3  -> PORTE5 (OE) (Tetap di Pin 3 karena Timer3 PWM ada di sini)
+// A0-A3 -> PORTF0-3 (Address)
 
-#define HUB_R1_PORT PORTH
-#define HUB_R1_DDR DDRH
-#define HUB_R1_BIT 5
+#define HUB_R1_PORT PORTA
+#define HUB_R1_DDR DDRA
+#define HUB_R1_BIT 0 // Pin 22
 
-#define HUB_R2_PORT PORTH
-#define HUB_R2_DDR DDRH
-#define HUB_R2_BIT 6
+#define HUB_R2_PORT PORTA
+#define HUB_R2_DDR DDRA
+#define HUB_R2_BIT 1 // Pin 23
 
-#define HUB_CLK_PORT PORTB
-#define HUB_CLK_DDR DDRB
-#define HUB_CLK_BIT 4
+#define HUB_CLK_PORT PORTA
+#define HUB_CLK_DDR DDRA
+#define HUB_CLK_BIT 2 // Pin 24
 
-#define HUB_LAT_PORT PORTB
-#define HUB_LAT_DDR DDRB
-#define HUB_LAT_BIT 5
+#define HUB_LAT_PORT PORTA
+#define HUB_LAT_DDR DDRA
+#define HUB_LAT_BIT 3 // Pin 25
 
+// OE Tetap di Pin 3 (Timer 3 OC3C)
 #define HUB_OE_PORT PORTE
 #define HUB_OE_DDR DDRE
 #define HUB_OE_BIT 5
@@ -71,7 +67,7 @@
 #define HUB_ADDR_PORT PORTF
 #define HUB_ADDR_DDR DDRF
 
-#define MCU_NAME "Arduino Mega 2560 (ATmega2560)"
+#define MCU_NAME "Arduino Mega 2560 (Custom Port A)"
 
 #elif defined(__AVR_ATmega328P__)
 // ========== Arduino Uno / Nano / Pro Mini (ATmega328P) ==========
@@ -123,7 +119,7 @@
 #error "║   ✓ Arduino Uno (ATmega328P)                               ║"
 #error "║   ✓ Arduino Nano (ATmega328P)                              ║"
 #error "║   ✓ Arduino Pro Mini 5V/16MHz (ATmega328P)                 ║"
-#error "║   ✓ Arduino Mega 2560 (ATmega2560)                         ║"
+#error "║   ✓ Arduino Mega 2560 (ATmega2560) + Ethernet (Custom Port A) ║"
 #error "║                                                            ║"
 #error "║ Your board is incompatible. See README.md for details.     ║"
 #error "╚════════════════════════════════════════════════════════════╝"

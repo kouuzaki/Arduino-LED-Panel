@@ -7,6 +7,10 @@ info:
     
     This device uses a **Single Command Topic** strategy. The specific operation 
     (Text, Clear, or Brightness) is determined by the `action` field in the JSON payload.
+    
+    NOTE: All MQTT messages published or subscribed by this device use **QoS = 1**
+    (at least once delivery). Where applicable topics include MQTT bindings
+    indicating the required QoS level.
 
 servers:
   local-broker:
@@ -34,6 +38,10 @@ channels:
         oneOf:
           - $ref: '#/components/messages/CommandText'
           - $ref: '#/components/messages/CommandClear'
+      bindings:
+        mqtt:
+          qos: 1
+          retained: false
 
   # ----------------------------------------------------------------
   # TELEMETRY CHANNEL (Device -> Client)
@@ -47,6 +55,10 @@ channels:
       description: Published every 10 seconds (configurable) containing complete device information including network, services, and system status. Published immediately upon connection.
       message:
         $ref: '#/components/messages/HeartbeatPayload'
+      bindings:
+        mqtt:
+          qos: 1
+          retained: false
 
 components:
   parameters:
@@ -81,6 +93,10 @@ components:
             maximum: 255
             description: Optional. LED panel brightness (PWM 0-255). Defaults to 255 if not specified.
             example: 200
+      bindings:
+        mqtt:
+          qos: 1
+          retained: false
 
     # --- Message: Clear Command ---
     CommandClear:
@@ -96,6 +112,10 @@ components:
             type: string
             const: clear
             description: Discriminator value. Must be "clear".
+      bindings:
+        mqtt:
+          qos: 1
+          retained: false
 
     # --- Message: Heartbeat Payload ---
     HeartbeatPayload:
@@ -186,3 +206,7 @@ components:
                       type: string
                       enum: [connected, disconnected]
                       example: "connected"
+      bindings:
+        mqtt:
+          qos: 1
+          retained: false

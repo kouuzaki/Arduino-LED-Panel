@@ -16,6 +16,7 @@
 #include "fonts.h"
 #include "managers/MqttManager.h"
 #include "handlers/MqttDisplayHandler.h"
+#include "handlers/MqttResponseHandler.h"
 #include "handlers/api_handler.h"
 #include "storage/FileStorage.h"
 
@@ -48,6 +49,7 @@ PubSubClient mqttClient(ethClient);
 // --- Managers & Handlers ---
 MqttManager mqttManager(mqttClient, deviceId);
 MqttDisplayHandler displayHandler(mqttClient, display, deviceId);
+MqttResponseHandler responseHandler(mqttClient, deviceId);
 ApiHandler apiHandler;
 
 // --- Callbacks ---
@@ -168,6 +170,9 @@ void setup()
 
     // 5. Init Services
     apiHandler.begin();
+
+    // Connect response handler to display handler (for publishing command responses)
+    displayHandler.setResponseHandler(&responseHandler);
 
     Serial.println("Init MQTT...");
     mqttClient.setCallback(globalMqttCallback);

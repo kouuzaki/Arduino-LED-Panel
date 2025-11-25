@@ -1,7 +1,7 @@
 asyncapi: '2.6.0'
 info:
   title: IoT HUB08 LED Panel API
-  version: '1.2.0'
+  version: '1.0.0'
   description: |
     MQTT Protocol specification for the Arduino Mega HUB08 LED Panel Controller.
     
@@ -34,10 +34,36 @@ channels:
       description: |
         Send commands to control the LED matrix. 
         The payload must include an `action` field to specify the command type.
+        Device will respond on the `{deviceId}/response` topic.
       message:
         oneOf:
           - $ref: '#/components/messages/CommandText'
           - $ref: '#/components/messages/CommandClear'
+          - $ref: '#/components/messages/CommandRestart'
+      bindings:
+        mqtt:
+          qos: 1
+          retained: false
+
+  # ----------------------------------------------------------------
+  # RESPONSE CHANNEL (Device -> Client)
+  # ----------------------------------------------------------------
+  response_topic:
+    description: Response topic pattern is {deviceId}/response
+    parameters:
+      deviceId:
+        description: Unique Device ID
+        schema:
+          type: string
+          default: iot_led_panel
+    subscribe:
+      summary: Command Response
+      description: |
+        Device publishes responses to commands sent to `device/{deviceId}/cmd/display`.
+        Response is published BEFORE the command is executed, giving the client
+        confirmation that the command was received and will be executed.
+      message:
+        $ref: '#/components/messages/CommandResponse'
       bindings:
         mqtt:
           qos: 1
@@ -112,6 +138,63 @@ components:
             type: string
             const: clear
             description: Discriminator value. Must be "clear".
+      bindings:
+        mqtt:
+          qos: 1
+          retained: false
+
+    # --- Message: Restart Command ---
+    CommandRestart:
+      name: restartCommand
+      title: Restart Device
+      summary: Triggers a soft reset of the device via watchdog timer.
+      description: |
+        Device will publish a success response to {deviceId}/response topic,
+        then restart in approximately 2 seconds.
+      contentType: application/json
+      payload:
+        type: object
+        required: [action]
+        properties:
+          action:
+            type: string
+            const: restart
+            description: Discriminator value. Must be "restart".
+      bindings:
+        mqtt:
+          qos: 1
+          retained: false
+
+    # --- Message: Command Response ---
+    CommandResponse:
+      name: commandResponse
+      title: Command Response
+      summary: Response from device to executed command.
+      contentType: application/json
+      payload:
+        type: object
+        properties:
+          action:
+            type: string
+            description: The action that was executed (text, clear, restart, etc.)
+            example: "text"
+          status:
+            type: string
+            enum: [success, error, pending]
+            description: Status of command execution
+            example: "success"
+          message:
+            type: string
+            description: Human-readable status message
+            example: "Text displayed successfully"
+          data:
+            type: string
+            description: Optional data related to the response
+            example: "HELLO WORLD"
+          timestamp:
+            type: integer
+            description: Milliseconds since device boot when response was generated
+            example: 12345
       bindings:
         mqtt:
           qos: 1

@@ -5,6 +5,8 @@
 #include <PubSubClient.h>
 #include <HUB08Panel.h>
 #include <ArduinoJson.h>
+#include <avr/wdt.h>
+#include "MqttResponseHandler.h"
 
 class MqttDisplayHandler
 {
@@ -13,6 +15,7 @@ private:
     HUB08_Panel &panel;
     const char *device_name;
     char cmdTopic[64];
+    MqttResponseHandler *responseHandler;
 
     // State cache
     char lastText[128];
@@ -22,10 +25,19 @@ private:
 public:
     MqttDisplayHandler(PubSubClient &mqttClient, HUB08_Panel &ledPanel, const char *name)
         : client(mqttClient), panel(ledPanel), device_name(name),
-          lastBrightness(128), lastX(0), lastY(8)
+          responseHandler(nullptr), lastBrightness(128), lastX(0), lastY(8)
     {
         memset(lastText, 0, sizeof(lastText));
         snprintf(cmdTopic, sizeof(cmdTopic), "device/%s/cmd/display", device_name);
+    }
+
+    /**
+     * @brief Set the response handler for publishing command responses
+     * @param handler Pointer to initialized MqttResponseHandler
+     */
+    void setResponseHandler(MqttResponseHandler *handler)
+    {
+        responseHandler = handler;
     }
 
     void setDeviceId(const char *newId)
@@ -89,6 +101,10 @@ public:
         {
             processClear();
         }
+        else if (strcmp(action, "restart") == 0)
+        {
+            processRestart();
+        }
     }
 
 private:
@@ -139,6 +155,33 @@ private:
         panel.swapBuffers(true);
         memset(lastText, 0, sizeof(lastText)); // Clear cache text
         Serial.println(F("Display Cleared"));
+
+        // Publish response
+        if (responseHandler)
+            responseHandler->publishSuccess("clear", "Display cleared successfully");
+    }
+
+    // Payload: {"action":"restart"}
+    // Device will publish response then restart via watchdog timer
+    void processRestart()
+    {
+        Serial.println(F("Restart command received"));
+
+        // Publish response BEFORE restart
+        if (responseHandler)
+            responseHandler->publishSuccess("restart", "Device will restart in 2 seconds");
+
+        // Give MQTT time to publish response
+        delay(500);
+
+        // Trigger watchdog reset
+        Serial.println(F("Initiating watchdog restart..."));
+        delay(500);
+
+        wdt_enable(WDTO_2S); // Enable watchdog with 2-second timeout
+        // MCU will reset when watchdog expires
+        while (1)
+            ; // Wait for reset
     }
 };
 

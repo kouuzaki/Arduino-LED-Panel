@@ -78,7 +78,7 @@ channels:
         $ref: '#/components/parameters/deviceId'
     subscribe:
       summary: System Heartbeat (Full Device Info)
-      description: Published every 10 seconds (configurable) containing complete device information including network, services, and system status. Published immediately upon connection.
+      description: Published every 10 seconds (default) containing complete device information including network, services, and system status. The interval is configurable and can be set from 1 ms up to 1 day (86,400,000 ms). Published immediately upon connection.
       message:
         $ref: '#/components/messages/HeartbeatPayload'
       bindings:

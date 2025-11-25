@@ -179,6 +179,41 @@ public:
                         }
                         else
                         {
+                            // Optional: accept mqtt_heartbeat_interval as string or numeric
+                            long hb = 0;
+                            if (obj.containsKey("mqtt_heartbeat_interval"))
+                            {
+                                // Accept numeric or string values
+                                if (obj["mqtt_heartbeat_interval"].is<long>())
+                                {
+                                    hb = obj["mqtt_heartbeat_interval"];
+                                }
+                                else if (obj["mqtt_heartbeat_interval"].is<const char *>())
+                                {
+                                    const char *s = obj["mqtt_heartbeat_interval"];
+                                    hb = strtol(s, nullptr, 10);
+                                }
+
+                                // Validate range (1 ms .. 86400000 ms)
+                                if (hb <= 0 || hb > 86400000L)
+                                {
+                                    client.println("HTTP/1.1 422 Unprocessable Entity");
+                                    client.println("Content-Type: application/json");
+                                    client.println("Connection: close");
+                                    client.println();
+                                    client.print("{\"error\":\"invalid mqtt_heartbeat_interval (must be 1..86400000)\"}");
+                                    client.stop();
+                                    return;
+                                }
+
+                                // Normalize: store as numeric value in JSON
+                                obj["mqtt_heartbeat_interval"] = hb;
+
+                                // Apply immediately to runtime manager (if available)
+                                // mqttManager is declared extern in DeviceSystemInfo.h
+                                mqttManager.setHeartbeatInterval((unsigned long)hb);
+                            }
+
                             bool ok = FileStorage::saveDeviceConfig(doc);
                             if (ok)
                             {

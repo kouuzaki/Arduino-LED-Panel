@@ -1,5 +1,6 @@
 #include "MqttManager.h"
 #include "../interface/DeviceSystemInfo.h"
+#include "../storage/FileStorage.h"
 
 MqttManager::MqttManager(PubSubClient &mqttClient, const char *name)
     : client(mqttClient), device_name(name),
@@ -51,12 +52,38 @@ void MqttManager::setReconnectCallback(ReconnectCallback cb)
 
 void MqttManager::setHeartbeatInterval(unsigned long intervalMs)
 {
-    if (intervalMs > 0 && intervalMs <= 600000) // Max 10 minutes
+    // Allow heartbeat intervals from 1 ms up to 24 hours (in milliseconds)
+    // 24 hours = 86_400_000 ms which fits in 32-bit unsigned long
+    const unsigned long MAX_HEARTBEAT_MS = 86400000UL; // 24h
+
+    if (intervalMs > 0 && intervalMs <= MAX_HEARTBEAT_MS)
     {
         heartbeatInterval = intervalMs;
         Serial.print("MQTT: Heartbeat interval updated to ");
         Serial.print(intervalMs);
         Serial.println(" ms");
+        // Persist new heartbeat interval to storage so it's retained across reboots
+        // Use a reasonably sized StaticJsonDocument to avoid dynamic allocation pressure
+        StaticJsonDocument<1024> cfg;
+        if (!FileStorage::loadDeviceConfig(cfg))
+        {
+            // start with empty object
+            cfg.clear();
+        }
+        cfg["mqtt_heartbeat_interval"] = intervalMs;
+        if (FileStorage::saveDeviceConfig(cfg))
+        {
+            Serial.println("MQTT: Heartbeat interval saved to storage");
+        }
+        else
+        {
+            Serial.println("MQTT: Failed to save heartbeat interval to storage");
+        }
+    }
+    else
+    {
+        Serial.print("MQTT: Heartbeat interval rejected (must be 1..86400000 ms): ");
+        Serial.println(intervalMs);
     }
 }
 

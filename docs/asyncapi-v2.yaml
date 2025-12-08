@@ -1,0 +1,637 @@
+asyncapi: '2.6.0'
+info:
+  title: IoT HUB08 LED Panel Control System
+  version: '2.0.0'
+  description: |
+    Comprehensive API specification for the Arduino Mega HUB08 LED Matrix Controller.
+    
+    **Supports Dual Control Methods:**
+    - **REST API** (HTTP) - Synchronous control via HTTP endpoints
+    - **MQTT Protocol** - Asynchronous control and telemetry via pub/sub messaging
+    
+    This device implements a unified command interface where both REST and MQTT 
+    endpoints can control the same display. Commands are idempotent and thread-safe.
+    
+    **Key Features:**
+    - Real-time LED text rendering with multi-line support
+    - Configurable display brightness (PWM 0-255)
+    - System diagnostics (memory, network, service status)
+    - Persistent configuration stored in EEPROM
+    - Automatic device heartbeat at configurable intervals (1ms - 24 hours)
+    - Soft reset capability via watchdog timer
+
+servers:
+  # REST API Endpoint
+  local-rest-api:
+    url: http://192.168.1.60:8080
+    protocol: http
+    description: REST API server running on Arduino Mega 2560
+    variables:
+      host:
+        default: 192.168.1.60
+        description: Device IP address (configurable via /api/device/config)
+
+  # MQTT Broker
+  local-mqtt-broker:
+    url: mqtt://192.168.1.1:1884
+    protocol: mqtt
+    description: MQTT Broker for command and telemetry channels
+    variables:
+      broker:
+        default: 192.168.1.1
+        description: MQTT broker IP (configurable via /api/device/config)
+      port:
+        default: '1884'
+        description: MQTT broker port (configurable via /api/device/config)
+
+channels:
+  # =========================================================
+  # REST API CHANNELS
+  # =========================================================
+
+  # GET /api/device/info
+  rest_device_info:
+    description: REST endpoint to retrieve device status and system information
+    servers:
+      - local-rest-api
+    bindings:
+      http:
+        method: GET
+        bindingVersion: '0.3.0'
+    publish:
+      summary: Get Device Information
+      description: |
+        Retrieve comprehensive device status including network, memory, service status,
+        and MQTT configuration. Does NOT restart the device.
+      message:
+        $ref: '#/components/messages/RestDeviceInfoResponse'
+      bindings:
+        http:
+          statusCode: 200
+          bindingVersion: '0.3.0'
+
+  # POST /api/display/text
+  rest_display_text:
+    description: REST endpoint to display text on LED matrix
+    servers:
+      - local-rest-api
+    bindings:
+      http:
+        method: POST
+        bindingVersion: '0.3.0'
+    subscribe:
+      summary: Display Text on LED Matrix
+      description: |
+        Render text on the LED display with optional brightness control.
+        Supports multi-line text using `\n` character.
+      message:
+        $ref: '#/components/messages/RestDisplayTextRequest'
+      bindings:
+        http:
+          statusCode: 200
+          bindingVersion: '0.3.0'
+
+  # POST /api/display/clear
+  rest_display_clear:
+    description: REST endpoint to clear the LED display
+    servers:
+      - local-rest-api
+    bindings:
+      http:
+        method: POST
+        bindingVersion: '0.3.0'
+    subscribe:
+      summary: Clear LED Display
+      description: Turn off all LEDs (black screen)
+      message:
+        $ref: '#/components/messages/RestActionResponse'
+      bindings:
+        http:
+          statusCode: 200
+          bindingVersion: '0.3.0'
+
+  # POST /api/display/brightness
+  rest_display_brightness:
+    description: REST endpoint to set display brightness
+    servers:
+      - local-rest-api
+    bindings:
+      http:
+        method: POST
+        bindingVersion: '0.3.0'
+    subscribe:
+      summary: Set Display Brightness
+      description: Adjust LED brightness using PWM (0-255)
+      message:
+        $ref: '#/components/messages/RestBrightnessRequest'
+      bindings:
+        http:
+          statusCode: 200
+          bindingVersion: '0.3.0'
+
+  # POST /api/device/config
+  rest_device_config:
+    description: REST endpoint to update device configuration
+    servers:
+      - local-rest-api
+    bindings:
+      http:
+        method: POST
+        bindingVersion: '0.3.0'
+    subscribe:
+      summary: Update Device Configuration
+      description: |
+        Update network, MQTT, or display settings. Configuration is persisted 
+        to EEPROM. Device will restart automatically after configuration change.
+      message:
+        $ref: '#/components/messages/RestDeviceConfigRequest'
+      bindings:
+        http:
+          statusCode: 200
+          bindingVersion: '0.3.0'
+
+  # =========================================================
+  # MQTT CHANNELS
+  # =========================================================
+
+  # MQTT Command Channel: device/{deviceId}/cmd/display
+  mqtt_display_command:
+    parameters:
+      deviceId:
+        description: Unique device identifier (default: led_lilygo)
+        schema:
+          type: string
+          default: led_lilygo
+    description: MQTT topic for sending display control commands
+    servers:
+      - local-mqtt-broker
+    subscribe:
+      summary: Send Display Commands
+      description: |
+        Publish JSON commands to control the LED matrix. Device responds on 
+        `{deviceId}/response` topic with command result.
+        
+        Supported actions: text, clear, restart
+      message:
+        oneOf:
+          - $ref: '#/components/messages/MqttDisplayTextCommand'
+          - $ref: '#/components/messages/MqttDisplayClearCommand'
+          - $ref: '#/components/messages/MqttDeviceRestartCommand'
+      bindings:
+        mqtt:
+          qos: 1
+          retained: false
+          bindingVersion: '0.3.0'
+
+  # MQTT Response Channel: {deviceId}/response
+  mqtt_response_topic:
+    parameters:
+      deviceId:
+        description: Unique device identifier (default: led_lilygo)
+        schema:
+          type: string
+          default: led_lilygo
+    description: MQTT topic for command responses
+    servers:
+      - local-mqtt-broker
+    publish:
+      summary: Command Response
+      description: |
+        Device publishes responses to all commands sent to the command topic.
+        Response is sent BEFORE command execution (for restart command).
+      message:
+        $ref: '#/components/messages/MqttCommandResponse'
+      bindings:
+        mqtt:
+          qos: 1
+          retained: false
+          bindingVersion: '0.3.0'
+
+  # MQTT Telemetry Channel: system/{deviceId}/info
+  mqtt_system_info:
+    parameters:
+      deviceId:
+        description: Unique device identifier (default: led_lilygo)
+        schema:
+          type: string
+          default: led_lilygo
+    description: MQTT topic for system heartbeat and telemetry
+    servers:
+      - local-mqtt-broker
+    publish:
+      summary: Device Heartbeat (System Information)
+      description: |
+        Device publishes its current status at regular intervals (configurable).
+        Default interval: 10 seconds; Maximum: 24 hours; Minimum: 1 ms
+        
+        Interval can be configured via `/api/device/config` using 
+        `mqtt_heartbeat_interval` field (in milliseconds).
+      message:
+        $ref: '#/components/messages/MqttHeartbeatPayload'
+      bindings:
+        mqtt:
+          qos: 1
+          retained: false
+          bindingVersion: '0.3.0'
+
+components:
+  # =========================================================
+  # SCHEMAS
+  # =========================================================
+  schemas:
+    # Device Info Data
+    DeviceInfoData:
+      type: object
+      properties:
+        device_id:
+          type: string
+          example: "led_lilygo"
+        mac_address:
+          type: string
+          example: "02:00:00:01:02:03"
+        uptime:
+          type: string
+          format: "YYYY-MM-DD HH:MM:SS"
+          example: "0000-00-00 00:15:30"
+        free_memory:
+          type: string
+          example: "6 KB"
+        memory:
+          type: object
+          properties:
+            total_bytes:
+              type: integer
+              example: 8192
+            free_bytes:
+              type: integer
+              example: 5632
+            used_bytes:
+              type: integer
+              example: 2560
+            used_percent:
+              type: number
+              format: float
+              example: 31.2
+            used:
+              type: string
+              example: "2.5 KB"
+        network:
+          type: object
+          properties:
+            type:
+              type: string
+              enum: [ethernet, wifi]
+              example: "ethernet"
+            status:
+              type: string
+              enum: [connected, disconnected]
+            connected:
+              type: boolean
+            ethernet_available:
+              type: boolean
+            ip:
+              type: string
+              format: ipv4
+              example: "192.168.1.60"
+            mac:
+              type: string
+              example: "02:00:00:01:02:03"
+            subnet_mask:
+              type: string
+              format: ipv4
+              example: "255.255.255.0"
+            gateway:
+              type: string
+              format: ipv4
+              example: "192.168.1.1"
+            dns_primary:
+              type: string
+              format: ipv4
+              example: "8.8.8.8"
+            dns_secondary:
+              type: string
+              format: ipv4
+              example: "1.1.1.1"
+        mqtt_server_ip:
+          type: string
+          format: ipv4
+          example: "192.168.1.1"
+        services:
+          type: object
+          properties:
+            api:
+              type: string
+              enum: [running, stopped]
+            mqtt:
+              type: string
+              enum: [connected, disconnected]
+
+    # REST API Response - Success
+    RestSuccessResponse:
+      type: object
+      required: [ok, message, action]
+      properties:
+        ok:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Command executed successfully"
+        action:
+          type: string
+          example: "text"
+
+    # REST API Response - Error
+    RestErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          example: "invalid json"
+
+  # =========================================================
+  # REST API MESSAGE DEFINITIONS
+  # =========================================================
+  messages:
+    # GET /api/device/info Response
+    RestDeviceInfoResponse:
+      name: DeviceInfoResponse
+      title: Device Information
+      contentType: application/json
+      payload:
+        type: object
+        required: [ok, message, data]
+        properties:
+          ok:
+            type: boolean
+            example: true
+          message:
+            type: string
+            example: "Device information retrieved successfully"
+          timestamp:
+            type: integer
+            example: 123456789
+          data:
+            type: array
+            items:
+              $ref: '#/components/schemas/DeviceInfoData'
+
+    # POST /api/display/text Request
+    RestDisplayTextRequest:
+      name: DisplayTextRequest
+      title: Display Text on LED Matrix
+      contentType: application/json
+      payload:
+        type: object
+        required: [text]
+        properties:
+          text:
+            type: string
+            description: Text to display (use \n for newlines)
+            example: "HELLO\nWORLD"
+          brightness:
+            type: integer
+            minimum: 0
+            maximum: 255
+            description: Optional brightness (0=off, 255=max)
+            example: 200
+
+    # POST /api/display/brightness Request
+    RestBrightnessRequest:
+      name: BrightnessRequest
+      title: Set Display Brightness
+      contentType: application/json
+      payload:
+        type: object
+        required: [brightness]
+        properties:
+          brightness:
+            type: integer
+            minimum: 0
+            maximum: 255
+            description: Brightness level
+            example: 150
+
+    # POST /api/display/text/clear/brightness Response
+    RestActionResponse:
+      name: ActionResponse
+      title: Generic Action Response
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RestSuccessResponse'
+
+    # POST /api/device/config Request
+    RestDeviceConfigRequest:
+      name: DeviceConfigRequest
+      title: Update Device Configuration
+      description: Update network, MQTT, or display settings
+      contentType: application/json
+      payload:
+        type: object
+        required: [device_id, mqtt_server]
+        properties:
+          device_id:
+            type: string
+            description: Unique device identifier
+            example: "led_lilygo"
+          mqtt_server:
+            type: string
+            description: MQTT broker IP address
+            example: "192.168.1.1"
+          mqtt_port:
+            type: integer
+            description: MQTT broker port (optional)
+            example: 1884
+          mqtt_username:
+            type: string
+            description: MQTT authentication username (optional)
+            example: "edgeadmin"
+          mqtt_password:
+            type: string
+            description: MQTT authentication password (optional)
+            example: "edge123"
+          mqtt_heartbeat_interval:
+            type: integer
+            description: MQTT heartbeat interval in milliseconds (1-86,400,000)
+            example: 10000
+          ip:
+            type: string
+            description: Device static IP address (optional)
+            example: "192.168.1.60"
+          gateway:
+            type: string
+            description: Network gateway IP (optional)
+            example: "192.168.1.1"
+          subnet_mask:
+            type: string
+            description: Network subnet mask (optional)
+            example: "255.255.255.0"
+          dns_primary:
+            type: string
+            description: Primary DNS server (optional)
+            example: "8.8.8.8"
+          dns_secondary:
+            type: string
+            description: Secondary DNS server (optional)
+            example: "1.1.1.1"
+
+    # =========================================================
+    # MQTT MESSAGE DEFINITIONS
+    # =========================================================
+
+    # MQTT: Display Text Command
+    MqttDisplayTextCommand:
+      name: displayTextCommand
+      title: Display Text
+      summary: Render text on LED matrix
+      contentType: application/json
+      payload:
+        type: object
+        required: [action, text]
+        properties:
+          action:
+            type: string
+            const: "text"
+            description: Command action discriminator
+          text:
+            type: string
+            description: Text to display (use \n for newlines)
+            example: "HELLO\nWORLD"
+          brightness:
+            type: integer
+            minimum: 0
+            maximum: 255
+            description: Optional brightness (0=off, 255=max)
+            example: 200
+
+    # MQTT: Clear Command
+    MqttDisplayClearCommand:
+      name: clearCommand
+      title: Clear Display
+      summary: Turn off all LEDs
+      contentType: application/json
+      payload:
+        type: object
+        required: [action]
+        properties:
+          action:
+            type: string
+            const: "clear"
+            description: Command action discriminator
+
+    # MQTT: Restart Command
+    MqttDeviceRestartCommand:
+      name: restartCommand
+      title: Restart Device
+      summary: Trigger soft reset via watchdog timer
+      description: Device publishes response then restarts in ~2 seconds
+      contentType: application/json
+      payload:
+        type: object
+        required: [action]
+        properties:
+          action:
+            type: string
+            const: "restart"
+            description: Command action discriminator
+
+    # MQTT: Command Response
+    MqttCommandResponse:
+      name: commandResponse
+      title: Command Response
+      summary: Response from device to executed command
+      contentType: application/json
+      payload:
+        type: object
+        required: [action, status, message, timestamp]
+        properties:
+          action:
+            type: string
+            description: The action that was executed
+            example: "text"
+          status:
+            type: string
+            enum: [success, error, pending]
+            description: Status of command execution
+            example: "success"
+          message:
+            type: string
+            description: Human-readable status message
+            example: "Text displayed successfully"
+          timestamp:
+            type: integer
+            description: Milliseconds since device boot
+            example: 12345
+          data:
+            type: string
+            description: Optional additional data
+            example: "HELLO WORLD"
+
+    # MQTT: Heartbeat/System Info Payload
+    MqttHeartbeatPayload:
+      name: heartbeat
+      title: Device Heartbeat (System Information)
+      summary: Complete device status published at regular intervals
+      contentType: application/json
+      payload:
+        type: object
+        required: [message, timestamp, data]
+        properties:
+          message:
+            type: string
+            example: "Device information"
+          timestamp:
+            type: integer
+            description: Milliseconds since boot
+            example: 123456789
+          encrypted:
+            type: boolean
+            example: false
+          data:
+            type: array
+            items:
+              $ref: '#/components/schemas/DeviceInfoData'
+
+  # =========================================================
+  # EXAMPLES
+  # =========================================================
+  examples:
+    DisplayTextExample:
+      summary: Display "HELLO WORLD" text with 70% brightness
+      payload:
+        action: text
+        text: "HELLO\nWORLD"
+        brightness: 178
+
+    DisplayClearExample:
+      summary: Clear the display
+      payload:
+        action: clear
+
+    RestartDeviceExample:
+      summary: Request device restart
+      payload:
+        action: restart
+
+    CommandResponseExample:
+      summary: Device response to text command
+      payload:
+        action: text
+        status: success
+        message: "Text displayed successfully"
+        timestamp: 45230
+        data: "HELLO\nWORLD"
+
+# =========================================================
+# OPERATION SECURITY
+# =========================================================
+components:
+  securitySchemes:
+    mqtt_auth:
+      type: userPassword
+      description: MQTT basic authentication
+    http_insecure:
+      type: http
+      scheme: bearer
+      description: HTTP connections are unencrypted (local network only)

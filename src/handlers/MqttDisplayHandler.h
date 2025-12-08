@@ -46,6 +46,50 @@ public:
         snprintf(cmdTopic, sizeof(cmdTopic), "device/%s/cmd/display", device_name);
     }
 
+    /**
+     * @brief Display text on LED matrix (for API/external use)
+     * @param text Text to display (supports \n for newlines)
+     */
+    void displayText(const char *text)
+    {
+        if (!text)
+            text = "";
+        strlcpy(lastText, text, sizeof(lastText));
+
+        panel.fillScreen(0);
+        panel.setCursor(0, 8);
+        panel.drawTextMultilineCentered(text);
+        panel.swapBuffers(true);
+
+        Serial.print(F("Display Text (API): "));
+        Serial.println(text);
+    }
+
+    /**
+     * @brief Clear the LED display (for API/external use)
+     */
+    void clearDisplay()
+    {
+        panel.fillScreen(0);
+        panel.swapBuffers(true);
+        memset(lastText, 0, sizeof(lastText));
+
+        Serial.println(F("Display Cleared (API)"));
+    }
+
+    /**
+     * @brief Set display brightness (for API/external use)
+     * @param brightness 0-255 (0=off, 255=max)
+     */
+    void setBrightness(uint8_t brightness)
+    {
+        lastBrightness = brightness;
+        panel.setBrightness(brightness);
+
+        Serial.print(F("Brightness (API): "));
+        Serial.println(brightness);
+    }
+
     void subscribe()
     {
         if (client.connected())

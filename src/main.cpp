@@ -29,17 +29,17 @@
 
 // --- Default Configuration ---
 byte mac[] = {0x02, 0x00, 0x00, 0x01, 0x02, 0x03};
-IPAddress ip(192, 168, 1, 60);
-IPAddress gateway(192, 168, 1, 1);
+IPAddress ip(10, 10, 10, 60);
+IPAddress gateway(10, 10, 10, 1);
 IPAddress subnet(255, 255, 255, 0);
 IPAddress dns(8, 8, 8, 8);
 
-IPAddress mqttBroker(192, 168, 1, 1);
+IPAddress mqttBroker(10, 10, 10, 1);
 uint16_t mqttPort = 1884;
 
 String mqttUser = "edgeadmin";
 String mqttPass = "edge123";
-char deviceId[32] = "led_lilygo";
+char deviceId[32] = "iot_led_panel";
 
 // --- Global Objects ---
 HUB08_Panel display(64, 32, 2);
@@ -170,6 +170,7 @@ void setup()
 
     // 5. Init Services
     apiHandler.begin();
+    apiHandler.setDisplayHandler(&displayHandler);
 
     // Connect response handler to display handler (for publishing command responses)
     displayHandler.setResponseHandler(&responseHandler);

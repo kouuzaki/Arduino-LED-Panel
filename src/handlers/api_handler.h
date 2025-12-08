@@ -8,20 +8,33 @@
 #include "storage/FileStorage.h"
 #include <ArduinoJson.h>
 
+// Forward declare MqttDisplayHandler
+class MqttDisplayHandler;
+
 class ApiHandler
 {
 private:
     EthernetServer server;
     static const uint16_t API_PORT = 8080;
+    MqttDisplayHandler *displayHandler; // Pointer to display handler
 
 public:
-    ApiHandler() : server(API_PORT) {}
+    ApiHandler() : server(API_PORT), displayHandler(nullptr) {}
 
     void begin()
     {
         server.begin();
         Serial.print("API Server started on port ");
         Serial.println(API_PORT);
+    }
+
+    /**
+     * @brief Set reference to MqttDisplayHandler for display commands
+     * @param handler Pointer to initialized MqttDisplayHandler
+     */
+    void setDisplayHandler(MqttDisplayHandler *handler)
+    {
+        displayHandler = handler;
     }
 
     void handleClient()
@@ -113,6 +126,18 @@ public:
         if (strcmp(method, "GET") == 0 && strcmp(path, "/api/device/info") == 0)
         {
             handleDeviceInfo(client);
+        }
+        else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/display/text") == 0)
+        {
+            handleDisplayText(client, contentLength);
+        }
+        else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/display/clear") == 0)
+        {
+            handleDisplayClear(client);
+        }
+        else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/display/brightness") == 0)
+        {
+            handleDisplayBrightness(client, contentLength);
         }
         else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/device/config") == 0)
         {
@@ -292,6 +317,214 @@ private:
         client.println("Connection: close");
         client.println();
         client.print(msg);
+    }
+
+    // POST /api/display/text - Display text on LED matrix
+    // Body: {"text":"HELLO\nWORLD", "brightness":200}
+    void handleDisplayText(EthernetClient &client, int contentLength)
+    {
+        if (!displayHandler)
+        {
+            client.println("HTTP/1.1 503 Service Unavailable");
+            client.println("Content-Type: application/json");
+            client.println("Connection: close");
+            client.println();
+            client.print("{\"error\":\"display service not available\"}");
+            return;
+        }
+
+        if (contentLength <= 0 || contentLength > 512)
+        {
+            client.println("HTTP/1.1 400 Bad Request");
+            client.println("Content-Type: application/json");
+            client.println("Connection: close");
+            client.println();
+            client.print("{\"error\":\"invalid content-length\"}");
+            return;
+        }
+
+        char *body = (char *)malloc(contentLength + 1);
+        if (!body)
+        {
+            client.println("HTTP/1.1 500 Internal Server Error");
+            client.println("Content-Type: application/json");
+            client.println("Connection: close");
+            client.println();
+            client.print("{\"error\":\"out of memory\"}");
+            return;
+        }
+
+        int read = 0;
+        unsigned long deadline = millis() + 1000;
+        while (read < contentLength && millis() < deadline)
+        {
+            if (client.available())
+            {
+                body[read++] = client.read();
+            }
+        }
+        body[read] = '\0';
+
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, body);
+        free(body);
+
+        if (err)
+        {
+            client.println("HTTP/1.1 400 Bad Request");
+            client.println("Content-Type: application/json");
+            client.println("Connection: close");
+            client.println();
+            client.print("{\"error\":\"invalid json\"}");
+            return;
+        }
+
+        if (!doc.containsKey("text"))
+        {
+            client.println("HTTP/1.1 422 Unprocessable Entity");
+            client.println("Content-Type: application/json");
+            client.println("Connection: close");
+            client.println();
+            client.print("{\"error\":\"missing required field: text\"}");
+            return;
+        }
+
+        const char *text = doc["text"];
+
+        // Optional brightness
+        if (doc.containsKey("brightness"))
+        {
+            int brightness = doc["brightness"];
+            if (brightness < 0)
+                brightness = 0;
+            if (brightness > 255)
+                brightness = 255;
+            displayHandler->setBrightness(brightness);
+        }
+
+        // Display text
+        displayHandler->displayText(text);
+
+        // Send response
+        client.println("HTTP/1.1 200 OK");
+        client.println("Content-Type: application/json");
+        client.println("Connection: close");
+        client.println();
+        client.print("{\"ok\":true,\"message\":\"Text displayed\",\"action\":\"text\"}");
+    }
+
+    // POST /api/display/clear - Clear display
+    void handleDisplayClear(EthernetClient &client)
+    {
+        if (!displayHandler)
+        {
+            client.println("HTTP/1.1 503 Service Unavailable");
+            client.println("Content-Type: application/json");
+            client.println("Connection: close");
+            client.println();
+            client.print("{\"error\":\"display service not available\"}");
+            return;
+        }
+
+        displayHandler->clearDisplay();
+
+        client.println("HTTP/1.1 200 OK");
+        client.println("Content-Type: application/json");
+        client.println("Connection: close");
+        client.println();
+        client.print("{\"ok\":true,\"message\":\"Display cleared\",\"action\":\"clear\"}");
+    }
+
+    // POST /api/display/brightness - Set display brightness
+    // Body: {"brightness":200}
+    void handleDisplayBrightness(EthernetClient &client, int contentLength)
+    {
+        if (!displayHandler)
+        {
+            client.println("HTTP/1.1 503 Service Unavailable");
+            client.println("Content-Type: application/json");
+            client.println("Connection: close");
+            client.println();
+            client.print("{\"error\":\"display service not available\"}");
+            return;
+        }
+
+        if (contentLength <= 0 || contentLength > 128)
+        {
+            client.println("HTTP/1.1 400 Bad Request");
+            client.println("Content-Type: application/json");
+            client.println("Connection: close");
+            client.println();
+            client.print("{\"error\":\"invalid content-length\"}");
+            return;
+        }
+
+        char *body = (char *)malloc(contentLength + 1);
+        if (!body)
+        {
+            client.println("HTTP/1.1 500 Internal Server Error");
+            client.println("Content-Type: application/json");
+            client.println("Connection: close");
+            client.println();
+            client.print("{\"error\":\"out of memory\"}");
+            return;
+        }
+
+        int read = 0;
+        unsigned long deadline = millis() + 1000;
+        while (read < contentLength && millis() < deadline)
+        {
+            if (client.available())
+            {
+                body[read++] = client.read();
+            }
+        }
+        body[read] = '\0';
+
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, body);
+        free(body);
+
+        if (err)
+        {
+            client.println("HTTP/1.1 400 Bad Request");
+            client.println("Content-Type: application/json");
+            client.println("Connection: close");
+            client.println();
+            client.print("{\"error\":\"invalid json\"}");
+            return;
+        }
+
+        if (!doc.containsKey("brightness"))
+        {
+            client.println("HTTP/1.1 422 Unprocessable Entity");
+            client.println("Content-Type: application/json");
+            client.println("Connection: close");
+            client.println();
+            client.print("{\"error\":\"missing required field: brightness\"}");
+            return;
+        }
+
+        int brightness = doc["brightness"];
+        if (brightness < 0 || brightness > 255)
+        {
+            client.println("HTTP/1.1 422 Unprocessable Entity");
+            client.println("Content-Type: application/json");
+            client.println("Connection: close");
+            client.println();
+            client.print("{\"error\":\"brightness must be 0-255\"}");
+            return;
+        }
+
+        displayHandler->setBrightness(brightness);
+
+        client.println("HTTP/1.1 200 OK");
+        client.println("Content-Type: application/json");
+        client.println("Connection: close");
+        client.println();
+        char response[200];
+        snprintf(response, sizeof(response), "{\"ok\":true,\"message\":\"Brightness set to %d\",\"action\":\"brightness\",\"value\":%d}", brightness, brightness);
+        client.print(response);
     }
 };
 

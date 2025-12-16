@@ -158,10 +158,10 @@ channels:
   mqtt_display_command:
     parameters:
       deviceId:
-        description: Unique device identifier (default: led_lilygo)
+        description: "Unique device identifier (default: led_lilygo)"
         schema:
           type: string
-          default: led_lilygo
+          default: "led_lilygo"
     description: MQTT topic for sending display control commands
     servers:
       - local-mqtt-broker
@@ -187,10 +187,10 @@ channels:
   mqtt_response_topic:
     parameters:
       deviceId:
-        description: Unique device identifier (default: led_lilygo)
+        description: "Unique device identifier (default: led_lilygo)"
         schema:
           type: string
-          default: led_lilygo
+          default: "led_lilygo"
     description: MQTT topic for command responses
     servers:
       - local-mqtt-broker
@@ -211,10 +211,10 @@ channels:
   mqtt_system_info:
     parameters:
       deviceId:
-        description: Unique device identifier (default: led_lilygo)
+        description: "Unique device identifier (default: led_lilygo)"
         schema:
           type: string
-          default: led_lilygo
+          default: "led_lilygo"
     description: MQTT topic for system heartbeat and telemetry
     servers:
       - local-mqtt-broker
@@ -280,11 +280,15 @@ components:
           properties:
             type:
               type: string
-              enum: [ethernet, wifi]
+              enum:
+                - ethernet
+                - wifi
               example: "ethernet"
             status:
               type: string
-              enum: [connected, disconnected]
+              enum:
+                - connected
+                - disconnected
             connected:
               type: boolean
             ethernet_available:
@@ -321,15 +325,22 @@ components:
           properties:
             api:
               type: string
-              enum: [running, stopped]
+              enum:
+                - running
+                - stopped
             mqtt:
               type: string
-              enum: [connected, disconnected]
+              enum:
+                - connected
+                - disconnected
 
     # REST API Response - Success
     RestSuccessResponse:
       type: object
-      required: [ok, message, action]
+      required:
+        - ok
+        - message
+        - action
       properties:
         ok:
           type: boolean
@@ -344,7 +355,8 @@ components:
     # REST API Response - Error
     RestErrorResponse:
       type: object
-      required: [error]
+      required:
+        - error
       properties:
         error:
           type: string
@@ -361,7 +373,10 @@ components:
       contentType: application/json
       payload:
         type: object
-        required: [ok, message, data]
+        required:
+          - ok
+          - message
+          - data
         properties:
           ok:
             type: boolean
@@ -384,7 +399,8 @@ components:
       contentType: application/json
       payload:
         type: object
-        required: [text]
+        required:
+          - text
         properties:
           text:
             type: string
@@ -404,7 +420,8 @@ components:
       contentType: application/json
       payload:
         type: object
-        required: [brightness]
+        required:
+          - brightness
         properties:
           brightness:
             type: integer
@@ -419,7 +436,21 @@ components:
       title: Generic Action Response
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/RestSuccessResponse'
+        type: object
+        required:
+          - ok
+          - message
+          - action
+        properties:
+          ok:
+            type: boolean
+            example: true
+          message:
+            type: string
+            example: "Command executed successfully"
+          action:
+            type: string
+            example: "text"
 
     # POST /api/device/config Request
     RestDeviceConfigRequest:
@@ -429,7 +460,9 @@ components:
       contentType: application/json
       payload:
         type: object
-        required: [device_id, mqtt_server]
+        required:
+          - device_id
+          - mqtt_server
         properties:
           device_id:
             type: string
@@ -488,7 +521,9 @@ components:
       contentType: application/json
       payload:
         type: object
-        required: [action, text]
+        required:
+          - action
+          - text
         properties:
           action:
             type: string
@@ -513,7 +548,8 @@ components:
       contentType: application/json
       payload:
         type: object
-        required: [action]
+        required:
+          - action
         properties:
           action:
             type: string
@@ -529,7 +565,8 @@ components:
       contentType: application/json
       payload:
         type: object
-        required: [action]
+        required:
+          - action
         properties:
           action:
             type: string
@@ -544,7 +581,11 @@ components:
       contentType: application/json
       payload:
         type: object
-        required: [action, status, message, timestamp]
+        required:
+          - action
+          - status
+          - message
+          - timestamp
         properties:
           action:
             type: string
@@ -552,7 +593,10 @@ components:
             example: "text"
           status:
             type: string
-            enum: [success, error, pending]
+            enum:
+              - success
+              - error
+              - pending
             description: Status of command execution
             example: "success"
           message:
@@ -576,7 +620,10 @@ components:
       contentType: application/json
       payload:
         type: object
-        required: [message, timestamp, data]
+        required:
+          - message
+          - timestamp
+          - data
         properties:
           message:
             type: string
@@ -594,39 +641,8 @@ components:
               $ref: '#/components/schemas/DeviceInfoData'
 
   # =========================================================
-  # EXAMPLES
+  # SECURITY SCHEMES
   # =========================================================
-  examples:
-    DisplayTextExample:
-      summary: Display "HELLO WORLD" text with 70% brightness
-      payload:
-        action: text
-        text: "HELLO\nWORLD"
-        brightness: 178
-
-    DisplayClearExample:
-      summary: Clear the display
-      payload:
-        action: clear
-
-    RestartDeviceExample:
-      summary: Request device restart
-      payload:
-        action: restart
-
-    CommandResponseExample:
-      summary: Device response to text command
-      payload:
-        action: text
-        status: success
-        message: "Text displayed successfully"
-        timestamp: 45230
-        data: "HELLO\nWORLD"
-
-# =========================================================
-# OPERATION SECURITY
-# =========================================================
-components:
   securitySchemes:
     mqtt_auth:
       type: userPassword

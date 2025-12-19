@@ -52,162 +52,65 @@ MqttDisplayHandler displayHandler(mqttClient, display, deviceId);
 MqttResponseHandler responseHandler(mqttClient, deviceId);
 ApiHandler apiHandler;
 
-// --- Ethernet Link Monitoring ---
+// --- Ethernet Initialization ---
+// Note: linkStatus() is unreliable on W5100 and some clone chips
+// We skip link detection and let MQTT connection be the indicator
 
 /**
- * @brief Wait for Ethernet link to become active
- * @param timeoutMs Maximum time to wait in milliseconds
- * @return true if link is up, false if timeout
+ * @brief Initialize Ethernet - simple init without link detection
+ * @return true if hardware detected, false otherwise
  */
-bool waitForLinkUp(unsigned long timeoutMs)
+bool initEthernet()
 {
-    unsigned long start = millis();
-    while (millis() - start < timeoutMs)
-    {
-        auto link = Ethernet.linkStatus();
-        if (link == LinkON)
-        {
-            return true;
-        }
-        delay(100);
-    }
-    return false;
-}
+    Serial.print("Ethernet Init... ");
 
-/**
- * @brief Initialize Ethernet with link detection and retry mechanism
- * @return true if successfully initialized and linked, false otherwise
- */
-bool initEthernetWithRetry()
-{
-    const int MAX_RETRIES = 3;
-    const unsigned long LINK_TIMEOUT = 10000; // 10 seconds
-
-    for (int attempt = 1; attempt <= MAX_RETRIES; attempt++)
-    {
-        Serial.print("Ethernet Init Attempt ");
-        Serial.print(attempt);
-        Serial.print("/");
-        Serial.print(MAX_RETRIES);
-        Serial.print("... ");
-
-        // Display status on LED panel
-        display.fillScreen(0);
-        char statusMsg[32];
-        snprintf(statusMsg, sizeof(statusMsg), "ETHERNET\nINIT %d/%d", attempt, MAX_RETRIES);
-        display.drawTextMultilineCentered(statusMsg);
-        display.swapBuffers(true);
-
-        // Initialize Ethernet
-        Ethernet.begin(mac, ip, dns, gateway, subnet);
-
-        // Check hardware
-        if (Ethernet.hardwareStatus() == EthernetNoHardware)
-        {
-            Serial.println("NO HARDWARE!");
-            display.fillScreen(0);
-            display.drawTextMultilineCentered("ERR: NO\nHARDWARE");
-            display.swapBuffers(true);
-            return false; // Fatal error, no retry
-        }
-
-        Serial.print("HW OK, IP: ");
-        Serial.print(Ethernet.localIP());
-        Serial.print(", Waiting for link... ");
-
-        // Display waiting for link
-        display.fillScreen(0);
-        display.drawTextMultilineCentered("WAITING\nLINK UP");
-        display.swapBuffers(true);
-
-        // Wait for link up
-        if (waitForLinkUp(LINK_TIMEOUT))
-        {
-            Serial.println("LINK UP!");
-            return true;
-        }
-
-        Serial.println("TIMEOUT");
-
-        // If not last attempt, wait before retry
-        if (attempt < MAX_RETRIES)
-        {
-            Serial.println("Retrying in 2 seconds...");
-            display.fillScreen(0);
-            display.drawTextMultilineCentered("RETRY IN\n2 SEC");
-            display.swapBuffers(true);
-            delay(2000);
-        }
-    }
-
-    // All retries failed
-    Serial.println("FATAL: Failed to establish Ethernet link after all retries");
+    // Display status on LED panel
     display.fillScreen(0);
-    display.drawTextMultilineCentered("ERR:\nNO LINK");
+    display.drawTextMultilineCentered("ETHERNET\nINIT");
     display.swapBuffers(true);
-    return false;
-}
 
-/**
- * @brief Check Ethernet link status and attempt recovery if down
- * Called periodically from loop()
- */
-void checkEthernetLink()
-{
-    static unsigned long lastCheck = 0;
-    static bool wasLinkUp = true;
-    const unsigned long CHECK_INTERVAL = 5000; // Check every 5 seconds
+    // Initialize Ethernet
+    Ethernet.begin(mac, ip, dns, gateway, subnet);
 
-    unsigned long now = millis();
-    if (now - lastCheck < CHECK_INTERVAL)
+    // Small delay for chip to stabilize
+    delay(1000);
+
+    // Check hardware only (link status unreliable)
+    if (Ethernet.hardwareStatus() == EthernetNoHardware)
     {
-        return;
-    }
-    lastCheck = now;
-
-    auto link = Ethernet.linkStatus();
-    bool isLinkUp = (link == LinkON);
-
-    // Detect link state change
-    if (isLinkUp != wasLinkUp)
-    {
-        if (isLinkUp)
-        {
-            Serial.println("Ethernet: Link restored");
-            display.fillScreen(0);
-            display.drawTextMultilineCentered("LINK\nRESTORED");
-            display.swapBuffers(true);
-            delay(1000);
-        }
-        else
-        {
-            Serial.println("Ethernet: Link down detected!");
-            display.fillScreen(0);
-            display.drawTextMultilineCentered("LINK\nDOWN");
-            display.swapBuffers(true);
-        }
-        wasLinkUp = isLinkUp;
-    }
-
-    // If link is down, try to recover
-    if (!isLinkUp)
-    {
-        Serial.println("Ethernet: Attempting recovery...");
+        Serial.println("NO HARDWARE!");
         display.fillScreen(0);
-        display.drawTextMultilineCentered("RECOVERY\nLINK");
+        display.drawTextMultilineCentered("ERR: NO\nHARDWARE");
         display.swapBuffers(true);
-
-        // Wait a bit for link to come back
-        if (waitForLinkUp(5000))
-        {
-            Serial.println("Ethernet: Link recovered automatically");
-            display.fillScreen(0);
-            display.drawTextMultilineCentered("LINK\nOK");
-            display.swapBuffers(true);
-            delay(1000);
-            wasLinkUp = true;
-        }
+        return false;
     }
+
+    // Log hardware type
+    switch (Ethernet.hardwareStatus())
+    {
+    case EthernetW5100:
+        Serial.print("W5100, ");
+        break;
+    case EthernetW5200:
+        Serial.print("W5200, ");
+        break;
+    case EthernetW5500:
+        Serial.print("W5500, ");
+        break;
+    default:
+        Serial.print("Unknown, ");
+        break;
+    }
+
+    Serial.print("IP: ");
+    Serial.println(Ethernet.localIP());
+
+    display.fillScreen(0);
+    display.drawTextMultilineCentered("ETHERNET\nOK");
+    display.swapBuffers(true);
+    delay(500);
+
+    return true;
 }
 
 // --- Callbacks ---
@@ -311,19 +214,13 @@ void setup()
             ;
     }
 
-    // 4. Init Ethernet with Link Detection and Auto-Recovery
-    Serial.println("Init Ethernet with Link Detection...");
-    if (!initEthernetWithRetry())
+    // 4. Init Ethernet (simplified - no link detection)
+    if (!initEthernet())
     {
-        Serial.println("FATAL: Cannot establish Ethernet connection");
+        Serial.println("FATAL: No Ethernet hardware");
         while (1)
             ; // Halt on fatal error
     }
-    Serial.println("Ethernet: Ready and Linked");
-    display.fillScreen(0);
-    display.drawTextMultilineCentered("ETHERNET\nOK");
-    display.swapBuffers(true);
-    delay(1000);
 
     // 5. Init Services
     apiHandler.begin();
@@ -346,13 +243,8 @@ void setup()
 
 void loop()
 {
-    // Monitor and maintain Ethernet link
-    checkEthernetLink();
     Ethernet.maintain();
-    
-    // Update services
     mqttManager.update();
     apiHandler.handleClient();
-    
     delay(10);
 }

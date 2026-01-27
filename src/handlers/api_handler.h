@@ -8,13 +8,13 @@
 #include <Ethernet.h>
 #include <avr/wdt.h>
 
-#include "HUB08Panel.h"
+#include "HUB12Panel.h"
 
 class ApiHandler {
 private:
   EthernetServer server;
   static const uint16_t API_PORT = 8080;
-  HUB08_Panel *display; // Pointer to display panel
+  HUB12_Panel *display; // Pointer to display panel
 
 public:
   ApiHandler() : server(API_PORT), display(nullptr) {}
@@ -29,7 +29,7 @@ public:
    * @brief Set reference to HUB08_Panel for display commands
    * @param panel Pointer to initialized HUB08_Panel
    */
-  void setDisplay(HUB08_Panel *panel) { display = panel; }
+  void setDisplay(HUB12_Panel *panel) { display = panel; }
 
   void handleClient() {
     EthernetClient client = server.available();

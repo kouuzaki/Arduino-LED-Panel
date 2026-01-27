@@ -1,171 +1,159 @@
 #ifndef DEVICE_SYSTEM_INFO_H
 #define DEVICE_SYSTEM_INFO_H
 
-#include <Arduino.h>
-#include <Ethernet.h>
-#include <ArduinoJson.h>
 #include "storage/FileStorage.h"
-#include "managers/MqttManager.h"
+#include <Arduino.h>
+#include <ArduinoJson.h>
+#include <Ethernet.h>
 
-// __heap_start and __brkval are provided by avr-libc; declare them in global namespace
+// __heap_start and __brkval are provided by avr-libc; declare them in global
+// namespace
 extern int __heap_start;
 extern int *__brkval;
 
 // External references to global objects
-extern MqttManager mqttManager;
 extern byte mac[];
 
-namespace SystemInfo
-{
+namespace SystemInfo {
 
-    // Helper: Hitung Free RAM (AVR specific)
-    inline int getFreeMemory()
-    {
-        int v;
-        return (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
+// Helper: Hitung Free RAM (AVR specific)
+inline int getFreeMemory() {
+  int v;
+  return (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
+}
+
+// Helper: Format Uptime ke "HH:MM:SS"
+inline void getUptimeString(char *buffer, size_t size) {
+  unsigned long seconds = millis() / 1000;
+  unsigned long hours = (seconds % 86400) / 3600;
+  unsigned long minutes = (seconds % 3600) / 60;
+  unsigned long secs = seconds % 60;
+  snprintf(buffer, size, "%02lu:%02lu:%02lu", hours, minutes, secs);
+}
+
+// Helper: Get Device ID from Storage
+inline void getStoredDeviceId(char *buffer, size_t size) {
+  strlcpy(buffer, "led_lilygo", size); // Default from user request
+  JsonDocument doc;
+  if (FileStorage::loadDeviceConfig(doc)) {
+    if (doc.containsKey("device_id")) {
+      strlcpy(buffer, doc["device_id"], size);
     }
+  }
+}
 
-    // Helper: Format Uptime ke "HH:MM:SS"
-    inline void getUptimeString(char *buffer, size_t size)
-    {
-        unsigned long seconds = millis() / 1000;
-        unsigned long hours = (seconds % 86400) / 3600;
-        unsigned long minutes = (seconds % 3600) / 60;
-        unsigned long secs = seconds % 60;
-        snprintf(buffer, size, "%02lu:%02lu:%02lu", hours, minutes, secs);
-    }
+// Helper: Convert IPAddress to String
+inline String ipToString(IPAddress ip) {
+  return String(ip[0]) + "." + String(ip[1]) + "." + String(ip[2]) + "." +
+         String(ip[3]);
+}
 
-    // Helper: Get Device ID from Storage
-    inline void getStoredDeviceId(char *buffer, size_t size)
-    {
-        strlcpy(buffer, "led_lilygo", size); // Default from user request
-        JsonDocument doc;
-        if (FileStorage::loadDeviceConfig(doc))
-        {
-            if (doc.containsKey("device_id"))
-            {
-                strlcpy(buffer, doc["device_id"], size);
-            }
-        }
-    }
+// Builds device info data object
+// Note: On Mega 2560, be careful with stack usage.
+inline void buildDeviceInfoData(JsonObject &dataObj) {
+  char devId[32];
+  getStoredDeviceId(devId, sizeof(devId));
+  dataObj["device_id"] = devId;
 
-    // Helper: Convert IPAddress to String
-    inline String ipToString(IPAddress ip)
-    {
-        return String(ip[0]) + "." + String(ip[1]) + "." + String(ip[2]) + "." + String(ip[3]);
-    }
+  // MAC Address
+  char macStr[18];
+  snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0],
+           mac[1], mac[2], mac[3], mac[4], mac[5]);
+  dataObj["mac_address"] = macStr;
 
-    // Builds device info data object
-    // Note: On Mega 2560, be careful with stack usage.
-    inline void buildDeviceInfoData(JsonObject &dataObj)
-    {
-        char devId[32];
-        getStoredDeviceId(devId, sizeof(devId));
-        dataObj["device_id"] = devId;
+  // Uptime in "YYYY-MM-DD HH:mm:ss" format (fallback to 0000-00-00)
+  char uptimeStr[20];
+  unsigned long ms = millis();
+  unsigned long seconds = ms / 1000;
+  unsigned long hours = (seconds % 86400) / 3600;
+  unsigned long minutes = (seconds % 3600) / 60;
+  unsigned long secs = seconds % 60;
+  snprintf(uptimeStr, sizeof(uptimeStr), "0000-00-00 %02lu:%02lu:%02lu", hours,
+           minutes, secs);
+  dataObj["uptime"] = uptimeStr;
 
-        // MAC Address
-        char macStr[18];
-        snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
-                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-        dataObj["mac_address"] = macStr;
+  // Memory usage (bytes + human readable)
+  int freeBytes = getFreeMemory();
 
-        // Uptime in "YYYY-MM-DD HH:mm:ss" format (fallback to 0000-00-00)
-        char uptimeStr[20];
-        unsigned long ms = millis();
-        unsigned long seconds = ms / 1000;
-        unsigned long hours = (seconds % 86400) / 3600;
-        unsigned long minutes = (seconds % 3600) / 60;
-        unsigned long secs = seconds % 60;
-        snprintf(uptimeStr, sizeof(uptimeStr), "0000-00-00 %02lu:%02lu:%02lu", hours, minutes, secs);
-        dataObj["uptime"] = uptimeStr;
-
-        // Memory usage (bytes + human readable)
-        int freeBytes = getFreeMemory();
-
-        // Total RAM depends on MCU
+  // Total RAM depends on MCU
 #if defined(__AVR_ATmega2560__)
-        const int totalRam = 8192; // 8 KB on Mega2560
+  const int totalRam = 8192; // 8 KB on Mega2560
 #elif defined(__AVR_ATmega328P__)
-        const int totalRam = 2048; // 2 KB on Uno/Nano
+  const int totalRam = 2048; // 2 KB on Uno/Nano
 #else
-        const int totalRam = 0; // Unknown MCU
+  const int totalRam = 0; // Unknown MCU
 #endif
 
-        int usedBytes = (totalRam > 0) ? (totalRam - freeBytes) : 0;
-        int usedPercent = (totalRam > 0) ? (usedBytes * 100 / totalRam) : 0;
+  int usedBytes = (totalRam > 0) ? (totalRam - freeBytes) : 0;
+  int usedPercent = (totalRam > 0) ? (usedBytes * 100 / totalRam) : 0;
 
-        // Preserve existing 'free_memory' human-readable field for backward compatibility
-        char memStr[32];
-        snprintf(memStr, sizeof(memStr), "%d KB free", (freeBytes >= 1024) ? (freeBytes / 1024) : 0);
-        dataObj["free_memory"] = memStr;
+  // Preserve existing 'free_memory' human-readable field for backward
+  // compatibility
+  char memStr[32];
+  snprintf(memStr, sizeof(memStr), "%d KB free",
+           (freeBytes >= 1024) ? (freeBytes / 1024) : 0);
+  dataObj["free_memory"] = memStr;
 
-        // Add a grouped "memory" object with numeric fields (safer math to avoid overflow on 16-bit int)
-        JsonObject mem = dataObj["memory"].to<JsonObject>();
-        mem["total_bytes"] = totalRam;
-        mem["free_bytes"] = freeBytes;
-        mem["used_bytes"] = usedBytes;
+  // Add a grouped "memory" object with numeric fields (safer math to avoid
+  // overflow on 16-bit int)
+  JsonObject mem = dataObj["memory"].to<JsonObject>();
+  mem["total_bytes"] = totalRam;
+  mem["free_bytes"] = freeBytes;
+  mem["used_bytes"] = usedBytes;
 
-        // Use 32-bit arithmetic to prevent overflow on AVR where 'int' is 16-bit
-        int usedPercentFixed = (totalRam > 0) ? (int)((long)usedBytes * 100L / (long)totalRam) : 0;
-        mem["used_percent"] = usedPercentFixed;
+  // Use 32-bit arithmetic to prevent overflow on AVR where 'int' is 16-bit
+  int usedPercentFixed =
+      (totalRam > 0) ? (int)((long)usedBytes * 100L / (long)totalRam) : 0;
+  mem["used_percent"] = usedPercentFixed;
 
-        // Add human readable used string and duplicate summary free string inside memory object
-        char usedStr[32];
-        snprintf(usedStr, sizeof(usedStr), "%d KB used (%d%%)", (usedBytes >= 1024) ? (usedBytes / 1024) : 0, usedPercentFixed);
-        mem["used"] = usedStr;
-        mem["free"] = memStr;
+  // Add human readable used string and duplicate summary free string inside
+  // memory object
+  char usedStr[32];
+  snprintf(usedStr, sizeof(usedStr), "%d KB used (%d%%)",
+           (usedBytes >= 1024) ? (usedBytes / 1024) : 0, usedPercentFixed);
+  mem["used"] = usedStr;
+  mem["free"] = memStr;
 
-        // Network information
-        JsonObject network = dataObj["network"].to<JsonObject>();
-        network["type"] = "ethernet";
-        network["status"] = mqttManager.getConnectionStatus();
-        network["connected"] = true; // Connected if we have IP
-        network["ethernet_available"] = true;
-        network["ip"] = ipToString(Ethernet.localIP());
-        network["mac"] = macStr;
-        network["subnet_mask"] = ipToString(Ethernet.subnetMask());
-        network["gateway"] = ipToString(Ethernet.gatewayIP());
-        network["dns_primary"] = ipToString(Ethernet.dnsServerIP());
+  // Network information
+  JsonObject network = dataObj["network"].to<JsonObject>();
+  network["type"] = "ethernet";
+  network["status"] = "connected";
+  network["connected"] = true; // Connected if we have IP
+  network["ethernet_available"] = true;
+  network["ip"] = ipToString(Ethernet.localIP());
+  network["mac"] = macStr;
+  network["subnet_mask"] = ipToString(Ethernet.subnetMask());
+  network["gateway"] = ipToString(Ethernet.gatewayIP());
+  network["dns_primary"] = ipToString(Ethernet.dnsServerIP());
 
-        // Load dns_secondary from storage
-        JsonDocument configDoc;
-        if (FileStorage::loadDeviceConfig(configDoc))
-        {
-            if (configDoc.containsKey("dns_secondary"))
-            {
-                network["dns_secondary"] = configDoc["dns_secondary"].as<String>();
-            }
-            else
-            {
-                network["dns_secondary"] = ipToString(Ethernet.dnsServerIP());
-            }
-        }
-        else
-        {
-            network["dns_secondary"] = ipToString(Ethernet.dnsServerIP());
-        }
-
-        // MQTT Server IP
-        dataObj["mqtt_server_ip"] = mqttManager.getMqttServerIP();
-
-        // Service status
-        JsonObject services = dataObj["services"].to<JsonObject>();
-        services["api"] = "running";
-        services["mqtt"] = mqttManager.getConnectionStatus();
+  // Load dns_secondary from storage
+  JsonDocument configDoc;
+  if (FileStorage::loadDeviceConfig(configDoc)) {
+    if (configDoc.containsKey("dns_secondary")) {
+      network["dns_secondary"] = configDoc["dns_secondary"].as<String>();
+    } else {
+      network["dns_secondary"] = ipToString(Ethernet.dnsServerIP());
     }
+  } else {
+    network["dns_secondary"] = ipToString(Ethernet.dnsServerIP());
+  }
 
-    // Wrapper untuk API response dengan format standard
-    inline void buildFullApiResponse(JsonDocument &response)
-    {
-        response["message"] = "Device information retrieved successfully";
-        response["timestamp"] = millis();
-        response["encrypted"] = false;
-
-        JsonArray dataArray = response["data"].to<JsonArray>();
-        JsonObject dataObj = dataArray.add<JsonObject>();
-        buildDeviceInfoData(dataObj);
-    }
-
+  // Service status
+  JsonObject services = dataObj["services"].to<JsonObject>();
+  services["api"] = "running";
 }
+
+// Wrapper untuk API response dengan format standard
+inline void buildFullApiResponse(JsonDocument &response) {
+  response["message"] = "Device information retrieved successfully";
+  response["timestamp"] = millis();
+  response["encrypted"] = false;
+
+  JsonArray dataArray = response["data"].to<JsonArray>();
+  JsonObject dataObj = dataArray.add<JsonObject>();
+  buildDeviceInfoData(dataObj);
+}
+
+} // namespace SystemInfo
 
 #endif

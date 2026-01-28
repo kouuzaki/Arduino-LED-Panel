@@ -41,7 +41,7 @@ bool initEthernet() {
   // Tampilkan status di LED
   display.fillScreen(0);
   // Default font pas 2 baris (8px + 8px = 16px)
-  display.drawTextMultilineCentered("LAN INIT...");
+  display.drawTextMultilineCentered("LAN INIT..");
 
   // Initialize Ethernet
   Ethernet.begin(mac, ip, dns, gateway, subnet);
@@ -53,7 +53,7 @@ bool initEthernet() {
   if (Ethernet.hardwareStatus() == EthernetNoHardware) {
     Serial.println("NO HARDWARE!");
     display.fillScreen(0);
-    display.drawTextMultilineCentered("ERR: LAN NO HW.");
+    display.drawTextMultilineCentered("ERR: LAN.");
     return false;
   }
 

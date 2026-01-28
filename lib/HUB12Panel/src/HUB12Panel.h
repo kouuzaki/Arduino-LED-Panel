@@ -18,7 +18,8 @@ public:
 
 private:
   HUB12_Config config;
-  uint8_t *buffer;
+  uint8_t *bufferFront;  // ISR reads this (displayed buffer)
+  uint8_t *bufferBack;   // CPU writes to this (drawing buffer)
   uint16_t bufferSize;
   volatile bool initialized;
   uint8_t brightness;

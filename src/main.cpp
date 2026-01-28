@@ -41,7 +41,7 @@ bool initEthernet() {
   // Tampilkan status di LED
   display.fillScreen(0);
   // Default font pas 2 baris (8px + 8px = 16px)
-  display.drawTextMultilineCentered("LAN INIT");
+  display.drawTextMultilineCentered("LAN INIT...");
 
   // Initialize Ethernet
   Ethernet.begin(mac, ip, dns, gateway, subnet);
@@ -53,7 +53,7 @@ bool initEthernet() {
   if (Ethernet.hardwareStatus() == EthernetNoHardware) {
     Serial.println("NO HARDWARE!");
     display.fillScreen(0);
-    display.drawTextMultilineCentered("ERR: LAN");
+    display.drawTextMultilineCentered("ERR: LAN NO HW.");
     return false;
   }
 
@@ -69,7 +69,7 @@ bool initEthernet() {
   Serial.println(Ethernet.localIP());
 
   display.fillScreen(0);
-  display.drawTextMultilineCentered("LAN OK");
+  display.drawTextMultilineCentered("LAN OK.");
   delay(500);
 
   return true;
@@ -81,12 +81,12 @@ void checkLanConnection() {
   bool isConnected = (linkStat == LinkON);
 
   if (isConnected && !lanWasConnected) {
-    Serial.println("LAN: Link UP");
+    Serial.println("LAN: Link UP.");
     Ethernet.maintain();
   } else if (!isConnected && lanWasConnected) {
-    Serial.println("LAN: Link DOWN");
+    Serial.println("LAN: Link DOWN.");
     display.fillScreen(0);
-    display.drawTextMultilineCentered("LAN DOWN");
+    display.drawTextMultilineCentered("LAN DOWN.");
     Ethernet.maintain();
   }
 
@@ -124,7 +124,7 @@ void setup() {
   if (display.begin(5, 7, 8, 3, A0, A1, 32, 16, 2)) {
     Serial.println("OK");
     
-    display.setBrightness(128);
+    display.setBrightness(10);
     // display.setCursor(0, 0);
     display.setFont(&Roboto_Bold_12);
     display.setTextSize(1);
@@ -150,7 +150,7 @@ void setup() {
   Serial.println("System Ready.");
   display.fillScreen(0);
   
-  display.drawTextMultilineCentered("READY");
+  display.drawTextMultilineCentered("READY.");
 }
 
 // --- Loop ---

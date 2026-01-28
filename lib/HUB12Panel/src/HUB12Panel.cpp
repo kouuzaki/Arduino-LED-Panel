@@ -33,19 +33,22 @@ HUB12_Panel::HUB12_Panel(uint16_t w, uint16_t h, uint16_t chain)
   config.height = h;
   config.chain = chain;
   bufferSize = (w * chain * h) / 8;
-  buffer = nullptr;
+  bufferFront = nullptr;
+  bufferBack = nullptr;
   instance = this;
 }
 
 bool HUB12_Panel::begin(int8_t r, int8_t clk, int8_t lat, int8_t oe, int8_t a,
                         int8_t b, uint16_t w, uint16_t h, uint16_t chain) {
   config = {r, clk, lat, oe, a, b, w, h, chain};
-  if (buffer)
-    free(buffer);
-  buffer = (uint8_t *)malloc(bufferSize);
-  if (!buffer)
+  // Allocate double buffer (front + back)
+  uint8_t *raw = (uint8_t *)malloc(bufferSize * 2);
+  if (!raw)
     return false;
-  memset(buffer, 0, bufferSize); // Clear buffer (Black)
+  bufferFront = raw;
+  bufferBack = raw + bufferSize;
+  memset(bufferFront, 0, bufferSize); // Clear (Black)
+  memset(bufferBack, 0, bufferSize);
 
   pinMode(r, OUTPUT);
   pinMode(clk, OUTPUT);
@@ -76,37 +79,40 @@ bool HUB12_Panel::begin(int8_t r, int8_t clk, int8_t lat, int8_t oe, int8_t a,
 void HUB12_Panel::scan() {
   if (!initialized)
     return;
-  static uint8_t row = 0;
+  static uint8_t scanRow = 0;
 
 // 1. Turn off Output (Blanking)
 #if defined(__AVR_ATmega2560__)
   uint8_t currentPWM = OCR3C;
-  // If Active Low, 255 = Off. If Active High, 0 = Off.
   OCR3C = OE_ACTIVE_LOW ? 255 : 0;
 #endif
 
-  // 2. Select Row (A & B)
+  // 2. Select Row (A & B) - for HUB12 1/4 scan
+  // scanRow 0-3 selects which 4 rows to display
   uint8_t portF = PORTF;
-  portF &= 0xFC;
-  portF |= (row & 0x03);
+  portF &= 0xFC;  // Clear A0, A1 bits
+  portF |= (scanRow & 0x03);
   PORTF = portF;
 
-  // 3. Shift Data (FIX: Color Inversion & Row Order)
+  // 3. Shift Data for 4 rows simultaneously
+  // HUB12: width(32*chain) pixels per row = 4 bytes
   int bytesPerPanel = 4;
   int totalWidthBytes = config.chain * bytesPerPanel;
 
-  // Loop setiap kolom byte
   for (int i = 0; i < totalWidthBytes; i++) {
+    // For 1/4 scan: scanRow selects which set of 4 rows (0-3)
+    // Each byte contains data for rows: scanRow, scanRow+4, scanRow+8, scanRow+12
+    // within the full 16-row height
+    uint8_t row0 = scanRow;        // rows 0, 4, 8, 12
+    uint8_t row1 = scanRow + 4;    // corresponding to scan pattern
+    uint8_t row2 = scanRow + 8;
+    uint8_t row3 = scanRow + 12;
 
-    // Get data for 4 scan rows
-    // Fix Color Inversion & Row Order
-    // This will invert 0 to 1 (On) and 1 to 0 (Off)
-    // Fix "Background Bright, Font Dark" issue
-
-    uint8_t b0 = ~buffer[i + ((row + 0) * totalWidthBytes)];
-    uint8_t b1 = ~buffer[i + ((row + 4) * totalWidthBytes)];
-    uint8_t b2 = ~buffer[i + ((row + 8) * totalWidthBytes)];
-    uint8_t b3 = ~buffer[i + ((row + 12) * totalWidthBytes)];
+    // Calculate buffer indices for linear buffer layout
+    uint8_t b0 = (row0 < config.height) ? ~bufferFront[i + (row0 * totalWidthBytes)] : 0xFF;
+    uint8_t b1 = (row1 < config.height) ? ~bufferFront[i + (row1 * totalWidthBytes)] : 0xFF;
+    uint8_t b2 = (row2 < config.height) ? ~bufferFront[i + (row2 * totalWidthBytes)] : 0xFF;
+    uint8_t b3 = (row3 < config.height) ? ~bufferFront[i + (row3 * totalWidthBytes)] : 0xFF;
 
     // Helper ShiftOut (MSB First)
     auto shiftOutByte = [&](uint8_t val) {
@@ -123,9 +129,7 @@ void HUB12_Panel::scan() {
       }
     };
 
-    // Fix Broken Font
-    // Standard DMD order is 12 -> 8 -> 4 -> 0 (b3, b2, b1, b0)
-    // If still broken, try changing to (b0, b1, b2, b3)
+    // Standard DMD order: 12 -> 8 -> 4 -> 0 (b3, b2, b1, b0)
     shiftOutByte(b3);
     shiftOutByte(b2);
     shiftOutByte(b1);
@@ -141,7 +145,8 @@ void HUB12_Panel::scan() {
   OCR3C = currentPWM;
 #endif
 
-  row = (row + 1) & 0x03;
+  // Advance to next scan row (0->1->2->3->0)
+  scanRow = (scanRow + 1) & 0x03;
 }
 
 void HUB12_Panel::setBrightness(uint8_t b) {
@@ -163,18 +168,22 @@ void HUB12_Panel::setBrightness(uint8_t b) {
 void HUB12_Panel::drawPixel(int16_t x, int16_t y, uint16_t c) {
   if (x < 0 || x >= width() || y < 0 || y >= height())
     return;
-  int idx = (y * (width() / 8)) + (x / 8);
+  // Buffer layout: linear row-by-row for full height
+  // For HUB12 1/4 scan: height=16, but scan 4 rows at once
+  uint16_t bytesPerRow = (width() / 8);
+  int idx = (y * bytesPerRow) + (x / 8);
+  // Write to BACK buffer only (CPU-safe, ISR reads FRONT)
   if (c)
-    buffer[idx] |= (0x80 >> (x & 7));
+    bufferBack[idx] |= (0x80 >> (x & 7));
   else
-    buffer[idx] &= ~(0x80 >> (x & 7));
+    bufferBack[idx] &= ~(0x80 >> (x & 7));
 }
 
 void HUB12_Panel::fillScreen(uint16_t c) {
-  memset(buffer, c ? 0xFF : 0x00, bufferSize);
+  memset(bufferBack, c ? 0xFF : 0x00, bufferSize);
 }
 
-void HUB12_Panel::clearScreen() { memset(buffer, 0, bufferSize); }
+void HUB12_Panel::clearScreen() { memset(bufferBack, 0, bufferSize); }
 
 void HUB12_Panel::drawTextCentered(const String &text) {
   clearScreen();
@@ -186,7 +195,8 @@ void HUB12_Panel::drawTextCentered(const String &text) {
   if (centerY < 0) centerY = 0;  // Clamp to prevent negative Y
   setCursor(centerX, centerY);
   print(text);
-  // Single-buffer ISR @ 625Hz: immediate display update
+  // Swap buffers to display
+  swapBuffers(true);
 }
 
 int16_t HUB12_Panel::getTextWidth(const String &text) {
@@ -257,11 +267,23 @@ void HUB12_Panel::drawTextMultilineCentered(const String &text) {
     print(lines[i]);
   }
   
-  // No explicit buffer swap needed - ISR updates continuously at 625Hz
+  // Swap buffers atomically to display rendered text
+  swapBuffers(true);
 }
 
 void HUB12_Panel::swapBuffers(bool copyFrontToBack) {
-  (void)copyFrontToBack;
-  // Single-buffer ISR driver: continuous 625Hz scan updates display immediately.
-  // No buffer swap needed—changes visible within ~2ms of any drawPixel/print call.
+  if (!initialized)
+    return;
+  
+  // Swap pointers atomically (disable interrupts to prevent ISR contention)
+  cli();
+  uint8_t *tmp = bufferFront;
+  bufferFront = bufferBack;
+  bufferBack = tmp;
+  sei();
+  
+  // Optional: synchronize both buffers for consistent multi-frame drawing
+  if (copyFrontToBack) {
+    memcpy(bufferBack, bufferFront, bufferSize);
+  }
 }

@@ -181,7 +181,10 @@ void HUB12_Panel::drawTextCentered(const String &text) {
   int16_t x1, y1;
   uint16_t w, h;
   getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
-  setCursor((width() - w) / 2, (height() - h) / 2);
+  int16_t centerX = (width() - w) / 2;
+  int16_t centerY = (height() - h) / 2 - y1 + 2;  // Extra +2 offset to prevent pixel overflow
+  if (centerY < 0) centerY = 0;  // Clamp to prevent negative Y
+  setCursor(centerX, centerY);
   print(text);
   // Single-buffer ISR @ 625Hz: immediate display update
 }
@@ -245,7 +248,11 @@ void HUB12_Panel::drawTextMultilineCentered(const String &text) {
     if (centerX < 0)
       centerX = 0; // Safety for long text
 
-    int16_t lineY = verticalMargin + i * lineSpacing;
+    int16_t x1, y1;
+    uint16_t w, h;
+    getTextBounds(lines[i], 0, 0, &x1, &y1, &w, &h);
+    int16_t lineY = verticalMargin + i * lineSpacing - y1 + 2;  // Extra +2 to prevent pixel overflow
+    if (lineY < 0) lineY = 0;  // Clamp to prevent negative Y
     setCursor(centerX, lineY);
     print(lines[i]);
   }

@@ -9,6 +9,7 @@
 #include <Arduino.h>
 #include <Ethernet.h>
 #include "HUB12Panel.h"
+#include "Roboto_Bold_12.h"
 #include "handlers/api_handler.h"
 #include "storage/FileStorage.h"
 
@@ -35,12 +36,12 @@ HUB12_Panel display(32, 16, 2);
 ApiHandler apiHandler;
 
 bool initEthernet() {
-  Serial.print("Ethernet Init... ");
+  Serial.print("Ethernet Init ");
 
   // Tampilkan status di LED
   display.fillScreen(0);
   // Default font pas 2 baris (8px + 8px = 16px)
-  display.drawTextMultilineCentered("ETHERNET\nINIT");
+  display.drawTextMultilineCentered("LAN INIT");
 
   // Initialize Ethernet
   Ethernet.begin(mac, ip, dns, gateway, subnet);
@@ -52,7 +53,7 @@ bool initEthernet() {
   if (Ethernet.hardwareStatus() == EthernetNoHardware) {
     Serial.println("NO HARDWARE!");
     display.fillScreen(0);
-    display.drawTextMultilineCentered("ERR: NO\nHARDWARE");
+    display.drawTextMultilineCentered("ERR: LAN");
     return false;
   }
 
@@ -68,7 +69,7 @@ bool initEthernet() {
   Serial.println(Ethernet.localIP());
 
   display.fillScreen(0);
-  display.drawTextMultilineCentered("ETHERNET\nOK");
+  display.drawTextMultilineCentered("LAN OK");
   delay(500);
 
   return true;
@@ -85,7 +86,7 @@ void checkLanConnection() {
   } else if (!isConnected && lanWasConnected) {
     Serial.println("LAN: Link DOWN");
     display.fillScreen(0);
-    display.drawTextMultilineCentered("LAN\nDOWN");
+    display.drawTextMultilineCentered("LAN DOWN");
     Ethernet.maintain();
   }
 
@@ -118,17 +119,18 @@ void setup() {
   }
 
   // 3. Init Display (HUB12 P10)
-  Serial.print("Init Display... ");
+  Serial.print("Init Display ");
   // Parameter: R=5, CLK=7, LAT=8, OE=3, A=A0, B=A1, W=32, H=16, Chain=2
   if (display.begin(5, 7, 8, 3, A0, A1, 32, 16, 2)) {
     Serial.println("OK");
     
     display.setBrightness(128);
+    // display.setCursor(0, 0);
+    display.setFont(&Roboto_Bold_12);
     display.setTextSize(1);
     display.setTextColor(1);
     
     display.fillScreen(0);
-    display.drawTextMultilineCentered("DISPLAY\nINIT");
     delay(500);
   } else {
     Serial.println("FAILED");
@@ -147,7 +149,8 @@ void setup() {
 
   Serial.println("System Ready.");
   display.fillScreen(0);
-  display.drawTextMultilineCentered("SYSTEM\nREADY");
+  
+  display.drawTextMultilineCentered("READY");
 }
 
 // --- Loop ---

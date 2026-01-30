@@ -33,11 +33,11 @@ inline void getUptimeString(char *buffer, size_t size) {
 
 // Helper: Get Device ID from Storage
 inline void getStoredDeviceId(char *buffer, size_t size) {
-  strlcpy(buffer, "led_lilygo", size); // Default from user request
+  strlcpy(buffer, "iot-led-panel", size); // Default from user request
   JsonDocument doc;
   if (FileStorage::loadDeviceConfig(doc)) {
-    if (doc.containsKey("device_id")) {
-      strlcpy(buffer, doc["device_id"], size);
+    if (doc["device_id"].is<const char*>()) {
+      strlcpy(buffer, doc["device_id"].as<const char*>(), size);
     }
   }
 }
@@ -85,7 +85,6 @@ inline void buildDeviceInfoData(JsonObject &dataObj) {
 #endif
 
   int usedBytes = (totalRam > 0) ? (totalRam - freeBytes) : 0;
-  int usedPercent = (totalRam > 0) ? (usedBytes * 100 / totalRam) : 0;
 
   // Preserve existing 'free_memory' human-readable field for backward
   // compatibility
@@ -129,8 +128,8 @@ inline void buildDeviceInfoData(JsonObject &dataObj) {
   // Load dns_secondary from storage
   JsonDocument configDoc;
   if (FileStorage::loadDeviceConfig(configDoc)) {
-    if (configDoc.containsKey("dns_secondary")) {
-      network["dns_secondary"] = configDoc["dns_secondary"].as<String>();
+    if (configDoc["dns_secondary"].is<const char*>()) {
+      network["dns_secondary"] = String(configDoc["dns_secondary"].as<const char*>());
     } else {
       network["dns_secondary"] = ipToString(Ethernet.dnsServerIP());
     }

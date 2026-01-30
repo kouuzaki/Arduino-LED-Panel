@@ -43,18 +43,51 @@ bool initEthernet() {
   // Default font pas 2 baris (8px + 8px = 16px)
   display.drawTextMultilineCentered("LAN INIT.");
 
-  // Initialize Ethernet
+  // Cek hardware dulu sebelum retry
   Ethernet.begin(mac, ip, dns, gateway, subnet);
-
-  // Delay sebentar untuk stabilitas
-  delay(1000);
-
-  // Cek hardware (link status tidak selalu akurat di W5100)
+  delay(100);
+  
   if (Ethernet.hardwareStatus() == EthernetNoHardware) {
     Serial.println("NO HARDWARE!");
     display.fillScreen(0);
     display.drawTextMultilineCentered("ERR: LAN.");
     return false;
+  }
+
+  // Retry hanya untuk tunggu link negotiation
+  const int initRetries = 5;
+  bool linkUp = false;
+  
+  for (int attempt = 1; attempt <= initRetries; ++attempt) {
+    Serial.print("Wait link attempt "); Serial.print(attempt); Serial.println("...");
+    
+    // Wait for link negotiation
+    unsigned long start = millis();
+    while (millis() - start < 3000) { // wait up to 3s
+      if (Ethernet.linkStatus() == LinkON) {
+        linkUp = true;
+        Serial.println("Link UP!");
+        break;
+      }
+      delay(200);
+    }
+
+    // Jika sudah link up, langsung keluar dari retry loop
+    if (linkUp) {
+      break;
+    }
+
+    // Jika belum link up dan masih ada kesempatan retry
+    Serial.println("Link not up yet");
+    display.fillScreen(0);
+    display.drawTextMultilineCentered("LAN RETRY");
+    delay(500);
+    
+    // Re-init Ethernet untuk attempt berikutnya
+    if (attempt < initRetries) {
+      Ethernet.begin(mac, ip, dns, gateway, subnet);
+      delay(100);
+    }
   }
 
   // Log hardware type
@@ -82,11 +115,19 @@ void checkLanConnection() {
 
   if (isConnected && !lanWasConnected) {
     Serial.println("LAN: Link UP.");
-    Ethernet.maintain();
+    // If we regain link but have no IP, try re-init to ensure settings
+    IPAddress cur = Ethernet.localIP();
+    if (cur == IPAddress(0,0,0,0)) {
+      Serial.println("No IP after link up, re-initializing Ethernet");
+      initEthernet();
+    } else {
+      Ethernet.maintain();
+    }
   } else if (!isConnected && lanWasConnected) {
     Serial.println("LAN: Link DOWN.");
     display.fillScreen(0);
     display.drawTextMultilineCentered("LAN DOWN.");
+    // Let maintain run but don't spam; controller will try to re-init when link returns
     Ethernet.maintain();
   }
 
@@ -103,6 +144,9 @@ void setup() {
   digitalWrite(SD_CS_PIN, HIGH);
   pinMode(MEGA_HW_SS, OUTPUT);
   digitalWrite(MEGA_HW_SS, HIGH);
+  // Ensure Ethernet CS is released (important on some boards)
+  pinMode(ETH_CS_PIN, OUTPUT);
+  digitalWrite(ETH_CS_PIN, HIGH);
 
   // 2. Load Configuration
   if (FileStorage::begin()) {

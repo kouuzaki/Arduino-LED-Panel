@@ -36,73 +36,98 @@ HUB12_Panel display(32, 16, 2);
 ApiHandler apiHandler;
 
 bool initEthernet() {
-  Serial.print("Ethernet Init ");
+  Serial.println("\n--- Ethernet Initialization ---");
+  Serial.print("MAC: ");
+  for (int i = 0; i < 6; i++) {
+    if (mac[i] < 16) Serial.print("0");
+    Serial.print(mac[i], HEX);
+    if (i < 5) Serial.print(":");
+  }
+  Serial.println();
 
   // Tampilkan status di LED
   display.fillScreen(0);
-  // Default font pas 2 baris (8px + 8px = 16px)
   display.drawTextMultilineCentered("LAN INIT.");
 
-  // Cek hardware dulu sebelum retry
-  Ethernet.begin(mac, ip, dns, gateway, subnet);
+  // Reset W5100 dengan toggle CS pin
+  Serial.println("Resetting W5100...");
+  digitalWrite(ETH_CS_PIN, LOW);
+  delay(10);
+  digitalWrite(ETH_CS_PIN, HIGH);
   delay(100);
+
+  // Init Ethernet dengan retry untuk DC jack compatibility
+  Serial.println("Starting Ethernet.begin()...");
+  Ethernet.begin(mac, ip, dns, gateway, subnet);
+  delay(200);
   
-  if (Ethernet.hardwareStatus() == EthernetNoHardware) {
-    Serial.println("NO HARDWARE!");
-    display.fillScreen(0);
-    display.drawTextMultilineCentered("ERR: LAN.");
-    return false;
-  }
-
-  // Retry hanya untuk tunggu link negotiation
-  const int initRetries = 5;
-  bool linkUp = false;
+  // Cek status hardware dengan retry mechanism
+  auto hwStatus = Ethernet.hardwareStatus();
+  Serial.print("Hardware Status: ");
   
-  for (int attempt = 1; attempt <= initRetries; ++attempt) {
-    Serial.print("Wait link attempt "); Serial.print(attempt); Serial.println("...");
-    
-    // Wait for link negotiation
-    unsigned long start = millis();
-    while (millis() - start < 3000) { // wait up to 3s
-      if (Ethernet.linkStatus() == LinkON) {
-        linkUp = true;
-        Serial.println("Link UP!");
-        break;
-      }
-      delay(200);
-    }
-
-    // Jika sudah link up, langsung keluar dari retry loop
-    if (linkUp) {
-      break;
-    }
-
-    // Jika belum link up dan masih ada kesempatan retry
-    Serial.println("Link not up yet");
-    display.fillScreen(0);
-    display.drawTextMultilineCentered("LAN RETRY");
+  // Jika tidak terdetect, tunggu sebentar dan coba lagi (DC jack kadang butuh waktu ekstra)
+  if (hwStatus == EthernetNoHardware) {
+    Serial.println("Not detected on first try...");
+    Serial.println("Waiting extra 500ms for W5100 stabilization...");
     delay(500);
     
-    // Re-init Ethernet untuk attempt berikutnya
-    if (attempt < initRetries) {
-      Ethernet.begin(mac, ip, dns, gateway, subnet);
-      delay(100);
-    }
+    // Retry init
+    Ethernet.begin(mac, ip, dns, gateway, subnet);
+    delay(200);
+    hwStatus = Ethernet.hardwareStatus();
+    Serial.print("Hardware Status (retry): ");
+  }
+  
+  switch (hwStatus) {
+    case EthernetNoHardware:
+      Serial.println("NO HARDWARE DETECTED!");
+      Serial.println("Check: 1) Shield mounted? 2) Pin 53 as OUTPUT? 3) SPI pins free?");
+      Serial.println("       4) Try manual reset button on Arduino");
+      display.fillScreen(0);
+      display.drawTextMultilineCentered("ERR: LAN.");
+      return false;
+    case EthernetW5100:
+      Serial.println("W5100 Detected");
+      break;
+    case EthernetW5200:
+      Serial.println("W5200 Detected");
+      break;
+    case EthernetW5500:
+      Serial.println("W5500 Detected");
+      break;
+    default:
+      Serial.println("Unknown Chip");
+      break;
   }
 
-  // Log hardware type
-  switch (Ethernet.hardwareStatus()) {
-  case EthernetW5100: Serial.print("W5100, "); break;
-  case EthernetW5200: Serial.print("W5200, "); break;
-  case EthernetW5500: Serial.print("W5500, "); break;
-  default: Serial.print("Unknown, "); break;
+  // Check link status (informational only - tidak block karena pakai static IP)
+  Serial.print("Checking Link Status... ");
+  auto linkStat = Ethernet.linkStatus();
+  bool linkUp = (linkStat == LinkON);
+  
+  if (linkStat == LinkON) {
+    Serial.println("✓ Cable Connected");
+  } else if (linkStat == LinkOFF) {
+    Serial.println("✗ No Cable (OK - using Static IP)");
+  } else {
+    Serial.println("? Unknown (OK - using Static IP)");
   }
 
-  Serial.print("IP: ");
-  Serial.println(Ethernet.localIP());
+  // Final configuration status
+  Serial.println("\n--- Network Configuration ---");
+  Serial.print("IP Address: ");
+  Serial.println(ip);
+  Serial.print("Gateway: ");
+  Serial.println(gateway);
+  Serial.print("Subnet: ");
+  Serial.println(subnet);
+  Serial.print("DNS: ");
+  Serial.println(dns);
+  Serial.println("Mode: Static IP (ready immediately)");
+  Serial.println("--- Configuration OK ---\n");
 
   display.fillScreen(0);
-  display.drawTextMultilineCentered("LAN OK.");
+  display.drawTextMultilineCentered("NET OK");
   delay(500);
 
   return true;
@@ -135,20 +160,36 @@ void checkLanConnection() {
 }
 
 void setup() {
-  Serial.begin(115200);
-  delay(500);
-  Serial.println("\n=== HUB12 IOT SYSTEM ===");
-
-  // 1. SPI Pin Safety
-  pinMode(SD_CS_PIN, OUTPUT);
-  digitalWrite(SD_CS_PIN, HIGH);
-  pinMode(MEGA_HW_SS, OUTPUT);
+  // *** CRITICAL: Configure SPI pins FIRST before anything else ***
+  // Pin 53 MUST be OUTPUT on Arduino Mega for SPI to work
+  pinMode(MEGA_HW_SS, OUTPUT);      // Pin 53 - Hardware SS (CRITICAL!)
   digitalWrite(MEGA_HW_SS, HIGH);
-  // Ensure Ethernet CS is released (important on some boards)
-  pinMode(ETH_CS_PIN, OUTPUT);
-  digitalWrite(ETH_CS_PIN, HIGH);
+  
+  pinMode(SD_CS_PIN, OUTPUT);       // Pin 4 - SD Card CS
+  digitalWrite(SD_CS_PIN, HIGH);    // Disable SD Card
+  
+  pinMode(ETH_CS_PIN, OUTPUT);      // Pin 10 - Ethernet CS
+  digitalWrite(ETH_CS_PIN, HIGH);   // Deselect Ethernet initially
+  
+  // *** CRITICAL FOR DC JACK POWER ***
+  // W5100 chip needs time after power-on to stabilize (voltage regulator, oscillator, etc)
+  // DC jack 9V 2A: Arduino boots VERY fast, but W5100 needs significant stabilization time
+  // USB Type-A: Has natural delay from USB enumeration (~500-1000ms)
+  // This extended delay ensures W5100 internal circuitry is fully ready before SPI communication
+  // Especially important for cheap/unstable DC adapters that have slow voltage rise time
+  delay(3000);  // 3 second delay for maximum DC jack compatibility
 
-  // 2. Load Configuration
+  // Now safe to initialize Serial
+  Serial.begin(115200);
+  delay(100);
+  Serial.println("\n=== HUB12 IOT SYSTEM ===");
+  Serial.println("SPI Pins Configured:");
+  Serial.println("  - Pin 53 (MEGA_HW_SS): OUTPUT/HIGH");
+  Serial.println("  - Pin 10 (ETH_CS): OUTPUT/HIGH");
+  Serial.println("  - Pin 4 (SD_CS): OUTPUT/HIGH");
+  Serial.println("W5100 Power-Up Delay: 3000ms (3 sec - DC jack 9V max compatibility)");
+
+  // 1. Load Configuration
   if (FileStorage::begin()) {
     JsonDocument doc;
     if (FileStorage::loadDeviceConfig(doc)) {
@@ -162,7 +203,7 @@ void setup() {
     }
   }
 
-  // 3. Init Display (HUB12 P10)
+  // 2. Init Display (HUB12 P10)
   Serial.print("Init Display ");
   // Parameter: R=5, CLK=7, LAT=8, OE=3, A=A0, B=A1, W=32, H=16, Chain=2
   if (display.begin(5, 7, 8, 3, A0, A1, 32, 16, 2)) {
@@ -181,13 +222,14 @@ void setup() {
     while (1);
   }
 
-  // 4. Init Ethernet
+  // 3. Init Ethernet (dengan delay untuk stabilisasi SPI)
+  delay(200);
   if (!initEthernet()) {
     Serial.println("FATAL: No Ethernet hardware");
     while (1);
   }
 
-  // 5. Init API
+  // 4. Init API
   apiHandler.begin();
   apiHandler.setDisplay(&display);
 

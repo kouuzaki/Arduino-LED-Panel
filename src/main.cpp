@@ -194,10 +194,10 @@ void setup() {
     JsonDocument doc;
     if (FileStorage::loadDeviceConfig(doc)) {
       Serial.println("Config: Loaded from Storage");
-      if (doc.containsKey("ip")) ip.fromString(doc["ip"].as<String>());
-      if (doc.containsKey("gateway")) gateway.fromString(doc["gateway"].as<String>());
-      if (doc.containsKey("subnet_mask")) subnet.fromString(doc["subnet_mask"].as<String>());
-      if (doc.containsKey("dns_primary")) dns.fromString(doc["dns_primary"].as<String>());
+      if (doc["ip"].is<String>()) ip.fromString(doc["ip"].as<String>());
+      if (doc["gateway"].is<String>()) gateway.fromString(doc["gateway"].as<String>());
+      if (doc["subnet_mask"].is<String>()) subnet.fromString(doc["subnet_mask"].as<String>());
+      if (doc["dns_primary"].is<String>()) dns.fromString(doc["dns_primary"].as<String>());
     } else {
       Serial.println("Config: Not found, using defaults");
     }
@@ -214,6 +214,9 @@ void setup() {
     display.setFont(&Roboto_Bold_12);
     display.setTextSize(1);
     display.setTextColor(1);
+    
+    // Initialize scrolling state
+    display.stopScrolling();
     
     display.fillScreen(0);
     delay(500);
@@ -251,5 +254,10 @@ void loop() {
 
   Ethernet.maintain();
   apiHandler.handleClient();
+  
+  // Update scrolling setiap frame (jika scrolling aktif)
+  // Ini memungkinkan scrolling terus berjalan di background
+  display.updateScrolling();
+  
   delay(10);
 }

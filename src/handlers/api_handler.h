@@ -169,7 +169,13 @@ private:
   }
 
   // POST /api/display/text - Display text on LED matrix
-  // Body: {"text":"HELLO\nWORLD", "brightness":200}
+  // Body: {
+  //   "text":"HELLO\nWORLD",
+  //   "brightness":200,
+  //   "scroll":false,          // optional: enable scrolling
+  //   "scroll_speed":1,        // optional: 1-5 pixels per frame (default: 1)
+  //   "scroll_duration":5000   // optional: scrolling duration in ms (0=infinite)
+  // }
   void handleDisplayText(EthernetClient &client, int contentLength) {
     if (!display) {
       client.println("HTTP/1.1 503 Service Unavailable");
@@ -221,7 +227,7 @@ private:
       return;
     }
 
-    if (!doc.containsKey("text")) {
+    if (!doc["text"].is<const char*>()) {
       client.println("HTTP/1.1 422 Unprocessable Entity");
       client.println("Content-Type: application/json");
       client.println("Connection: close");
@@ -233,27 +239,63 @@ private:
     const char *text = doc["text"];
 
     // Optional brightness
-    if (doc.containsKey("brightness")) {
+    if (doc["brightness"].is<int>()) {
       int brightness = doc["brightness"];
-      if (brightness < 0)
-        brightness = 0;
-      if (brightness > 255)
-        brightness = 255;
+      if (brightness < 0) brightness = 0;
+      if (brightness > 255) brightness = 255;
       display->setBrightness(brightness);
     }
 
-    // Display text
-    display->fillScreen(0);
-    display->drawTextMultilineCentered(text);
-    display->swapBuffers(true);
+    // Check if scrolling is enabled
+    bool enableScroll = doc["scroll"].is<bool>() && doc["scroll"].as<bool>();
+    
+    if (enableScroll) {
+      // Scrolling mode
+      uint16_t scrollSpeed = 1;  // default
+      unsigned long scrollDuration = 0;  // 0 = infinite
+      
+      if (doc["scroll_speed"].is<int>()) {
+        scrollSpeed = doc["scroll_speed"];
+        if (scrollSpeed < 1) scrollSpeed = 1;
+        if (scrollSpeed > 5) scrollSpeed = 5;
+      }
+      
+      if (doc["scroll_duration"].is<long>()) {
+        scrollDuration = doc["scroll_duration"];
+      }
+      
+      // Start scrolling - akan terus loop di background (di loop utama)
+      // scroll_duration hanya untuk API response, bukan untuk stop scrolling
+      display->startScrolling(text, scrollSpeed);
+      
+      // Send response IMMEDIATELY (don't block on scrolling)
+      // Scrolling akan terus berjalan di loop utama dengan updateScrolling()
+      client.println("HTTP/1.1 200 OK");
+      client.println("Content-Type: application/json");
+      client.println("Connection: close");
+      client.println();
+      char response[256];
+      snprintf(response, sizeof(response),
+               "{\"ok\":true,\"message\":\"Scrolling started\",\"action\":\"scroll\",\"speed\":%u,\"info\":\"Scrolling runs in background - call /api/display/clear to stop\"}",
+               scrollSpeed);
+      client.print(response);
+    } else {
+      // Static text display (original behavior)
+      // STOP scrolling jika ada yang aktif
+      display->stopScrolling();
+      
+      display->fillScreen(0);
+      display->drawTextMultilineCentered(text);
+      display->swapBuffers(true);
 
-    // Send response
-    client.println("HTTP/1.1 200 OK");
-    client.println("Content-Type: application/json");
-    client.println("Connection: close");
-    client.println();
-    client.print(
-        "{\"ok\":true,\"message\":\"Text displayed\",\"action\":\"text\"}");
+      // Send response
+      client.println("HTTP/1.1 200 OK");
+      client.println("Content-Type: application/json");
+      client.println("Connection: close");
+      client.println();
+      client.print(
+          "{\"ok\":true,\"message\":\"Text displayed\",\"action\":\"text\"}");
+    }
   }
 
   // POST /api/display/clear - Clear display
@@ -331,7 +373,7 @@ private:
       return;
     }
 
-    if (!doc.containsKey("brightness")) {
+    if (!doc["brightness"].is<int>()) {
       client.println("HTTP/1.1 422 Unprocessable Entity");
       client.println("Content-Type: application/json");
       client.println("Connection: close");

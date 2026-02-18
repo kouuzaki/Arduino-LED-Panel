@@ -275,15 +275,74 @@ void HUB12_Panel::swapBuffers(bool copyFrontToBack) {
   if (!initialized)
     return;
   
-  // Swap pointers atomically (disable interrupts to prevent ISR contention)
+  // Swap pointers AND optional memcpy ATOMICALLY (disable interrupts to prevent ISR contention)
   cli();
   uint8_t *tmp = bufferFront;
   bufferFront = bufferBack;
   bufferBack = tmp;
-  sei();
   
-  // Optional: synchronize both buffers for consistent multi-frame drawing
+  // CRITICAL: memcpy harus atomic (inside cli/sei)
+  // ISR tidak boleh interrupt saat data sedang di-copy
   if (copyFrontToBack) {
     memcpy(bufferBack, bufferFront, bufferSize);
+  }
+  
+  sei(); // Enable Interrupt SETELAH memcpy selesai
+}
+// ==========================================================
+// RUNNING TEXT / SCROLLING IMPLEMENTATION
+// ==========================================================
+
+void HUB12_Panel::startScrolling(const String &text, uint16_t speed) {
+  scrollText = text;
+  scrollSpeed = (speed > 0) ? speed : 1;
+  scrollX = width();
+  
+  // *** PENTING: Matikan Text Wrap ***
+  // Tanpa ini, teks akan terbelah saat sebagian di luar layar
+  setTextWrap(false);
+  
+  isScrolling = true;
+  lastScrollTime = millis();
+}
+
+void HUB12_Panel::stopScrolling() {
+  isScrolling = false;
+  scrollText = "";
+  scrollX = 0;
+}
+
+void HUB12_Panel::updateScrolling() {
+  if (!isScrolling || scrollText.length() == 0) return;
+
+  unsigned long now = millis();
+  unsigned long elapsed = now - lastScrollTime;
+
+  if (elapsed >= 40) {
+    scrollX -= scrollSpeed;
+    lastScrollTime = now;
+
+    int16_t textWidth = getTextWidth(scrollText);
+    
+    // Reset loop (+ buffer 5px biar bersih baru muncul lagi)
+    if (scrollX < -(textWidth + 5)) {
+       scrollX = width();
+    }
+
+    clearScreen();
+
+    // Hitung Center Y yang Presisi
+    int16_t x1, y1;
+    uint16_t w, h;
+    getTextBounds(scrollText, 0, 0, &x1, &y1, &w, &h);
+    
+    // Gunakan y1 untuk kompensasi agar tepat di tengah 16px
+    int16_t y = (height() - h) / 2 - y1 + 1;
+
+    setCursor(scrollX, y);
+    print(scrollText);
+
+    // Swap dengan copy untuk prevent torn reads saat scrolling
+    swapBuffers(true);
   }
 }

@@ -20,8 +20,8 @@
 
 // --- Default Configuration ---
 byte mac[] = {0x02, 0x00, 0x00, 0x01, 0x02, 0x03};
-IPAddress ip(10, 10, 10, 60);
-IPAddress gateway(10, 10, 10, 1);
+IPAddress ip(10, 10, 1, 20);
+IPAddress gateway(0, 0, 0, 0); // No gateway for direct LAN
 IPAddress subnet(255, 255, 255, 0);
 IPAddress dns(8, 8, 8, 8);
 

@@ -67,7 +67,7 @@ bool HUB12_Panel::begin(int8_t r, int8_t clk, int8_t lat, int8_t oe, int8_t a,
   TCCR1A = 0;
   TCCR1B = 0;
   TCNT1 = 0;
-  OCR1A = 1600;  // ~625Hz ISR for stable, proven refresh
+  OCR1A = 1600; // ~625Hz ISR for stable, proven refresh
   TCCR1B |= (1 << WGM12) | (1 << CS11);
   TIMSK1 |= (1 << OCIE1A);
   sei();
@@ -90,7 +90,7 @@ void HUB12_Panel::scan() {
   // 2. Select Row (A & B) - for HUB12 1/4 scan
   // scanRow 0-3 selects which 4 rows to display
   uint8_t portF = PORTF;
-  portF &= 0xFC;  // Clear A0, A1 bits
+  portF &= 0xFC; // Clear A0, A1 bits
   portF |= (scanRow & 0x03);
   PORTF = portF;
 
@@ -101,18 +101,26 @@ void HUB12_Panel::scan() {
 
   for (int i = 0; i < totalWidthBytes; i++) {
     // For 1/4 scan: scanRow selects which set of 4 rows (0-3)
-    // Each byte contains data for rows: scanRow, scanRow+4, scanRow+8, scanRow+12
-    // within the full 16-row height
-    uint8_t row0 = scanRow;        // rows 0, 4, 8, 12
-    uint8_t row1 = scanRow + 4;    // corresponding to scan pattern
+    // Each byte contains data for rows: scanRow, scanRow+4, scanRow+8,
+    // scanRow+12 within the full 16-row height
+    uint8_t row0 = scanRow;     // rows 0, 4, 8, 12
+    uint8_t row1 = scanRow + 4; // corresponding to scan pattern
     uint8_t row2 = scanRow + 8;
     uint8_t row3 = scanRow + 12;
 
     // Calculate buffer indices for linear buffer layout
-    uint8_t b0 = (row0 < config.height) ? ~bufferFront[i + (row0 * totalWidthBytes)] : 0xFF;
-    uint8_t b1 = (row1 < config.height) ? ~bufferFront[i + (row1 * totalWidthBytes)] : 0xFF;
-    uint8_t b2 = (row2 < config.height) ? ~bufferFront[i + (row2 * totalWidthBytes)] : 0xFF;
-    uint8_t b3 = (row3 < config.height) ? ~bufferFront[i + (row3 * totalWidthBytes)] : 0xFF;
+    uint8_t b0 = (row0 < config.height)
+                     ? ~bufferFront[i + (row0 * totalWidthBytes)]
+                     : 0xFF;
+    uint8_t b1 = (row1 < config.height)
+                     ? ~bufferFront[i + (row1 * totalWidthBytes)]
+                     : 0xFF;
+    uint8_t b2 = (row2 < config.height)
+                     ? ~bufferFront[i + (row2 * totalWidthBytes)]
+                     : 0xFF;
+    uint8_t b3 = (row3 < config.height)
+                     ? ~bufferFront[i + (row3 * totalWidthBytes)]
+                     : 0xFF;
 
     // Helper ShiftOut (MSB First)
     auto shiftOutByte = [&](uint8_t val) {
@@ -190,12 +198,16 @@ void HUB12_Panel::drawTextCentered(const String &text) {
   int16_t x1, y1;
   uint16_t w, h;
   getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
+
+  // Precise centering using actual text bounds
+  // y1 = top of bbox relative to cursor (negative for ascenders)
+  // Formula: cursorY + y1 = (height - h) / 2  →  cursorY = (height - h) / 2 -
+  // y1
   int16_t centerX = (width() - w) / 2;
-  int16_t centerY = (height() - h) / 2 - y1 + 2;  // Extra +2 offset to prevent pixel overflow
-  if (centerY < 0) centerY = 0;  // Clamp to prevent negative Y
+  int16_t centerY = (height() - h) / 2 - y1;
+
   setCursor(centerX, centerY);
   print(text);
-  // Swap buffers to display
   swapBuffers(true);
 }
 
@@ -242,31 +254,34 @@ void HUB12_Panel::drawTextMultilineCentered(const String &text) {
   if (fontHeight < 7)
     fontHeight = 7; // Minimum 5x7 font
 
-  // Tight line spacing for responsive display
-  int16_t lineSpacing = fontHeight + 1; // Small gap between lines
+  int16_t lineSpacing = fontHeight + 1;
   int16_t totalHeight = (lineCount - 1) * lineSpacing + fontHeight;
 
-  // Center vertically with some margin
+  // Center vertically
   int16_t verticalMargin = (height() - totalHeight) / 2;
   if (verticalMargin < 0)
-    verticalMargin = 0; // Prevent negative margin
+    verticalMargin = 0;
 
   // Draw each line centered
   for (uint8_t i = 0; i < lineCount; i++) {
     int16_t lineWidth = getTextWidth(lines[i]);
     int16_t centerX = (width() - lineWidth) / 2;
     if (centerX < 0)
-      centerX = 0; // Safety for long text
+      centerX = 0;
 
+    // Use actual text bounds for precise Y positioning per line
     int16_t x1, y1;
     uint16_t w, h;
     getTextBounds(lines[i], 0, 0, &x1, &y1, &w, &h);
-    int16_t lineY = verticalMargin + i * lineSpacing - y1 + 2;  // Extra +2 to prevent pixel overflow
-    if (lineY < 0) lineY = 0;  // Clamp to prevent negative Y
+
+    // Top of this line's bbox should be at: verticalMargin + i * lineSpacing
+    // cursorY + y1 = verticalMargin + i * lineSpacing
+    // cursorY = verticalMargin + i * lineSpacing - y1
+    int16_t lineY = verticalMargin + i * lineSpacing - y1;
     setCursor(centerX, lineY);
     print(lines[i]);
   }
-  
+
   // Swap buffers atomically to display rendered text
   swapBuffers(true);
 }
@@ -274,19 +289,20 @@ void HUB12_Panel::drawTextMultilineCentered(const String &text) {
 void HUB12_Panel::swapBuffers(bool copyFrontToBack) {
   if (!initialized)
     return;
-  
-  // Swap pointers AND optional memcpy ATOMICALLY (disable interrupts to prevent ISR contention)
+
+  // Swap pointers AND optional memcpy ATOMICALLY (disable interrupts to prevent
+  // ISR contention)
   cli();
   uint8_t *tmp = bufferFront;
   bufferFront = bufferBack;
   bufferBack = tmp;
-  
+
   // CRITICAL: memcpy harus atomic (inside cli/sei)
   // ISR tidak boleh interrupt saat data sedang di-copy
   if (copyFrontToBack) {
     memcpy(bufferBack, bufferFront, bufferSize);
   }
-  
+
   sei(); // Enable Interrupt SETELAH memcpy selesai
 }
 // ==========================================================
@@ -297,11 +313,11 @@ void HUB12_Panel::startScrolling(const String &text, uint16_t speed) {
   scrollText = text;
   scrollSpeed = (speed > 0) ? speed : 1;
   scrollX = width();
-  
+
   // *** PENTING: Matikan Text Wrap ***
   // Tanpa ini, teks akan terbelah saat sebagian di luar layar
   setTextWrap(false);
-  
+
   isScrolling = true;
   lastScrollTime = millis();
 }
@@ -313,7 +329,8 @@ void HUB12_Panel::stopScrolling() {
 }
 
 void HUB12_Panel::updateScrolling() {
-  if (!isScrolling || scrollText.length() == 0) return;
+  if (!isScrolling || scrollText.length() == 0)
+    return;
 
   unsigned long now = millis();
   unsigned long elapsed = now - lastScrollTime;
@@ -323,10 +340,10 @@ void HUB12_Panel::updateScrolling() {
     lastScrollTime = now;
 
     int16_t textWidth = getTextWidth(scrollText);
-    
+
     // Reset loop (+ buffer 5px biar bersih baru muncul lagi)
     if (scrollX < -(textWidth + 5)) {
-       scrollX = width();
+      scrollX = width();
     }
 
     clearScreen();
@@ -335,9 +352,9 @@ void HUB12_Panel::updateScrolling() {
     int16_t x1, y1;
     uint16_t w, h;
     getTextBounds(scrollText, 0, 0, &x1, &y1, &w, &h);
-    
-    // Gunakan y1 untuk kompensasi agar tepat di tengah 16px
-    int16_t y = (height() - h) / 2 - y1 + 1;
+
+    // Precise vertical centering using actual text bounds
+    int16_t y = (height() - h) / 2 - y1;
 
     setCursor(scrollX, y);
     print(scrollText);

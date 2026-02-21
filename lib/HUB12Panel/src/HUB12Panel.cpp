@@ -87,28 +87,32 @@ void HUB12_Panel::scan() {
   OCR3C = OE_ACTIVE_LOW ? 255 : 0;
 #endif
 
-  // 2. Select Row (A & B) - for HUB12 1/4 scan
-  // scanRow 0-3 selects which 4 rows to display
-  uint8_t portF = PORTF;
-  portF &= 0xFC; // Clear A0, A1 bits
-  portF |= (scanRow & 0x03);
-  PORTF = portF;
-
-  // 3. Shift Data for 4 rows simultaneously
+  // 2. Shift Data for 4 rows simultaneously (BEFORE setting address!)
   // HUB12: width(32*chain) pixels per row = 4 bytes
   int bytesPerPanel = 4;
   int totalWidthBytes = config.chain * bytesPerPanel;
 
+  // Helper ShiftOut (MSB First)
+  auto shiftOutByte = [&](uint8_t val) {
+    for (int k = 0; k < 8; k++) {
+      // R (Pin 5 - PE3)
+      if (val & 0x80)
+        PORTE |= (1 << 3);
+      else
+        PORTE &= ~(1 << 3);
+      // CLK (Pin 7 - PH4)
+      PORTH |= (1 << 4);
+      PORTH &= ~(1 << 4);
+      val <<= 1;
+    }
+  };
+
   for (int i = 0; i < totalWidthBytes; i++) {
-    // For 1/4 scan: scanRow selects which set of 4 rows (0-3)
-    // Each byte contains data for rows: scanRow, scanRow+4, scanRow+8,
-    // scanRow+12 within the full 16-row height
-    uint8_t row0 = scanRow;     // rows 0, 4, 8, 12
-    uint8_t row1 = scanRow + 4; // corresponding to scan pattern
+    uint8_t row0 = scanRow;
+    uint8_t row1 = scanRow + 4;
     uint8_t row2 = scanRow + 8;
     uint8_t row3 = scanRow + 12;
 
-    // Calculate buffer indices for linear buffer layout
     uint8_t b0 = (row0 < config.height)
                      ? ~bufferFront[i + (row0 * totalWidthBytes)]
                      : 0xFF;
@@ -122,21 +126,6 @@ void HUB12_Panel::scan() {
                      ? ~bufferFront[i + (row3 * totalWidthBytes)]
                      : 0xFF;
 
-    // Helper ShiftOut (MSB First)
-    auto shiftOutByte = [&](uint8_t val) {
-      for (int k = 0; k < 8; k++) {
-        // R (Pin 5 - PE3)
-        if (val & 0x80)
-          PORTE |= (1 << 3);
-        else
-          PORTE &= ~(1 << 3);
-        // CLK (Pin 7 - PH4)
-        PORTH |= (1 << 4);
-        PORTH &= ~(1 << 4);
-        val <<= 1;
-      }
-    };
-
     // Standard DMD order: 12 -> 8 -> 4 -> 0 (b3, b2, b1, b0)
     shiftOutByte(b3);
     shiftOutByte(b2);
@@ -144,9 +133,16 @@ void HUB12_Panel::scan() {
     shiftOutByte(b0);
   }
 
-  // 4. Latch
+  // 3. Latch (load shifted data into output latches)
   PORTH |= (1 << 5);
   PORTH &= ~(1 << 5);
+
+  // 4. Select Row AFTER latch (prevents ghosting!)
+  // Old data was already latched, now safe to change address
+  uint8_t portF = PORTF;
+  portF &= 0xFC;
+  portF |= (scanRow & 0x03);
+  PORTF = portF;
 
 // 5. Restore Brightness
 #if defined(__AVR_ATmega2560__)
